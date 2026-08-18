@@ -427,3 +427,18 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+
+# AWS.Deployment
+# Terraform
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/terraform.tfvars
+
+# Deploy values templates (non-secret) - exempt from *.env above
+!k8s/environments/*.env
+
+# Deploy secrets (per-env filled secrets)
+k8s/environments/*.secrets.env
+
