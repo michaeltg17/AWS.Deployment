@@ -34,7 +34,7 @@ resource "aws_security_group" "control" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  tags = merge(var.tags, { Name = "${var.project_name}-control" })
+  tags = merge(local.tags, { Name = "${var.project_name}-control" })
   lifecycle {
     ignore_changes = [name]
   }
@@ -84,7 +84,7 @@ resource "aws_security_group" "worker" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  tags = merge(var.tags, { Name = "${var.project_name}-worker" })
+  tags = merge(local.tags, { Name = "${var.project_name}-worker" })
   lifecycle {
     ignore_changes = [name]
   }

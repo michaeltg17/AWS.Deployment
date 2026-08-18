@@ -106,6 +106,16 @@ k8s/
 
    Rancher dashboard: `http://$CTRL_IP:3080` (admin / token printed by step 2; add the cluster with a local kubeconfig import).
 
+## Run CI locally
+
+The same checks that run in GitHub Actions also run in a docker container, so no local tooling is needed:
+
+```sh
+bash ci-docker.sh
+```
+
+Builds the `aws-deployment-ci` tools image once (terraform, shellcheck, python3, kubeconform), then runs `ci.sh` against the current working tree (mounted, so uncommitted changes count).
+
 ## Upgrade the app
 
 ```sh

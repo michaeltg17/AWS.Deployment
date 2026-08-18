@@ -1,0 +1,35 @@
+# CI tools image: terraform, shellcheck, python3+yaml, kubeconform.
+# The repo is mounted at /app at runtime (see ci-docker.sh), so this image
+# is built once and stays valid across commits.
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash \
+    ca-certificates \
+    curl \
+    git \
+    jq \
+    python3 \
+    python3-yaml \
+    shellcheck \
+    unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+ARG TERRAFORM_VERSION=1.15.8
+RUN curl -fsSL -o /tmp/terraform.zip \
+      "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip" \
+    && unzip /tmp/terraform.zip -d /usr/local/bin \
+    && rm /tmp/terraform.zip \
+    && terraform version
+
+RUN curl -sSfL \
+      https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz \
+    | tar -xz -C /usr/local/bin kubeconform \
+    && kubeconform -v
+
+WORKDIR /app
+
+# The workspace (including this ci.sh) is mounted at /app at runtime.
+CMD ["bash", "ci.sh"]

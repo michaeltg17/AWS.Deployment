@@ -1,0 +1,10 @@
+# Nothing is COPYed into the CI image (repo is mounted at runtime),
+# but keep this list current if a COPY is ever added.
+.git/
+.github/
+terraform/.terraform/
+*.tfstate
+*.tfstate.*
+terraform/terraform.tfvars
+k8s/environments/*.secrets.env
+release-notes.txt

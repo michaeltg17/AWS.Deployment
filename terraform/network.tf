@@ -3,7 +3,7 @@ resource "aws_vpc" "this" {
   enable_dns_support   = true
   enable_dns_hostnames = true
 
-  tags = var.tags
+  tags = local.tags
 }
 
 resource "aws_subnet" "public" {
@@ -11,19 +11,19 @@ resource "aws_subnet" "public" {
   cidr_block        = var.public_subnet_cidr
   availability_zone = "${var.aws_region}a"
 
-  tags = merge(var.tags, { Name = "${var.project_name}-public-az-a" })
+  tags = merge(local.tags, { Name = "${var.project_name}-public-az-a" })
 }
 
 resource "aws_internet_gateway" "this" {
   vpc_id = aws_vpc.this.id
 
-  tags = var.tags
+  tags = local.tags
 }
 
 resource "aws_route_table" "public" {
   vpc_id = aws_vpc.this.id
 
-  tags = var.tags
+  tags = local.tags
 }
 
 resource "aws_route" "public_internet" {
