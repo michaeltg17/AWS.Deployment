@@ -57,6 +57,13 @@ apply() {
 
 render "$K8S_DIR"/*.yaml
 
+# K8s >= 1.33 rejects IP addresses in ingress host (must be a DNS name).
+# IP-based envs (dev) fall back to a catch-all rule by dropping the host.
+if [[ "$DOMAIN" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  # keep the YAML list item, drop only the host value
+  sed -i 's|^[[:space:]]*- host:.*$|    -|' "$TMP/ingress.yaml"
+fi
+
 echo "==> namespace"
 apply namespace.yaml
 
@@ -88,11 +95,11 @@ apply ingress.yaml
 
 echo ""
 echo "============================================================"
-echo "  App:      http://${DOMAIN}/"
-echo "  API:      http://${DOMAIN}/api/  (via ingress)"
+  echo "  App:      http://${DOMAIN}:30080/"
+  echo "  API:      http://${DOMAIN}:30080/api/  (via ingress)"
 echo "  Rancher:  http://<control-ip>:3080"
 echo "============================================================"
 echo ""
 echo "Quick check:"
-echo "  curl -s http://${DOMAIN}/api/ | head"
+  echo "  curl -s http://${DOMAIN}:30080/api/ | head"
 echo "  kubectl -n app get pods,svc,ingress"

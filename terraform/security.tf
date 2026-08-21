@@ -19,11 +19,27 @@ resource "aws_security_group" "control" {
   }
 
   ingress {
-    description = "App via nginx NodePort"
-    from_port   = 80
-    to_port     = 443
+    description = "k3s API (worker join + local kubectl)"
+    from_port   = 6443
+    to_port     = 6443
     protocol    = "tcp"
     cidr_blocks = var.app_allowed_cidrs
+  }
+
+  ingress {
+    description = "App via nginx NodePort (30080/30443)"
+    from_port   = 30000
+    to_port     = 32767
+    protocol    = "tcp"
+    cidr_blocks = var.app_allowed_cidrs
+  }
+
+  ingress {
+    description = "inter-node (flannel VXLAN + node traffic)"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = [var.vpc_cidr]
   }
 
   egress {
@@ -61,7 +77,7 @@ resource "aws_security_group" "worker" {
   }
 
   ingress {
-    description = "k3s server -> agents (node port range)"
+    description = "k3s server to agents (node port range)"
     from_port   = 10250
     to_port     = 10250
     protocol    = "tcp"
@@ -69,11 +85,19 @@ resource "aws_security_group" "worker" {
   }
 
   ingress {
-    description = "App via nginx NodePort"
-    from_port   = 80
-    to_port     = 443
+    description = "App via nginx NodePort (30080/30443)"
+    from_port   = 30000
+    to_port     = 32767
     protocol    = "tcp"
     cidr_blocks = var.app_allowed_cidrs
+  }
+
+  ingress {
+    description = "inter-node (flannel VXLAN + node traffic)"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = [var.vpc_cidr]
   }
 
   egress {

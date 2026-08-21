@@ -65,10 +65,10 @@ k8s/
 
 2. **Bootstrap the control node** (installs helm, ingress-nginx, rancher; prints URL + admin token):
 
-   ```sh
-   scp ../bootstrap/setup-control-node.sh ec2-user@$CTRL_IP:~/
-   ssh ec2-user@$CTRL_IP 'sh ~/setup-control-node.sh'
-   ```
+    ```sh
+    scp ../bootstrap/setup-control-node.sh ec2-user@$CTRL_IP:~/
+    ssh ec2-user@$CTRL_IP 'sudo sh ~/setup-control-node.sh'
+    ```
 
 3. **Configure kubectl** (run from the repo root; Git Bash or WSL):
 

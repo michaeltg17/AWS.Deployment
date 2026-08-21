@@ -442,3 +442,6 @@ terraform/terraform.tfvars
 # Deploy secrets (per-env filled secrets)
 k8s/environments/*.secrets.env
 
+
+# Local kubectl config (contains client cert/key) - created by the deploy docs at repo root
+.kubeconfig

@@ -7,6 +7,9 @@
 
 set -eu
 
+# vanilla helm does not auto-detect the k3s kubeconfig (k3s kubectl does)
+export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
+
 wait_for_k3s() {
   echo "Waiting for k3s control plane..."
   i=0
@@ -30,14 +33,21 @@ install_helm() {
 }
 
 install_ingress_nginx() {
-  echo "Installing ingress-nginx (NodePort 80/443)..."
+  echo "Installing ingress-nginx (NodePort 30080/30443)..."
   helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
   helm repo update
+  # clear any release left pending from a previously failed install
+  if ! helm list --deployed -q --namespace ingress-nginx 2>/dev/null | grep -qx "ingress-nginx"; then
+    helm uninstall ingress-nginx --namespace ingress-nginx --ignore-not-found >/dev/null 2>&1 || true
+  fi
+  # NodePort values must be in 30000-32767, so the app is served on :30080
   helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
     --namespace ingress-nginx --create-namespace \
     --set controller.service.type=NodePort \
-    --set controller.service.nodePorts.http=80 \
-    --set controller.service.nodePorts.https=443
+    --set controller.service.nodePorts.http=30080 \
+    --set controller.service.nodePorts.https=30443
+  # later steps create Ingress resources; the admission webhook must be available
+  kubectl -n ingress-nginx wait --for=condition=ready pod -l app.kubernetes.io/component=controller --timeout=180s
 }
 
 set_default_ingress_class() {
@@ -54,7 +64,7 @@ EOF
 
 install_rancher() {
   echo "Installing rancher..."
-  helm repo add rancher-latest https://releases.rancher.com/charts
+  helm repo add rancher-latest https://releases.rancher.com/server-charts/latest --force-update
   helm repo update
   helm upgrade --install rancher rancher-latest/rancher \
     --namespace cattle-system --create-namespace \
@@ -64,7 +74,11 @@ install_rancher() {
     --set ingress.tls.source=none \
     --set service.type=NodePort \
     --set service.nodePort=3080
-  kubectl -n cattle-system wait --for=condition=ready pod -l app=rancher --timeout=420s
+  # cold boot (DB seed + catalog restore) on small nodes can outlive the
+  # chart's default startup probe budget (12 x 10s) - widen it, then restart
+  kubectl -n cattle-system patch deploy rancher --type merge -p '{"spec":{"template":{"spec":{"containers":[{"name":"rancher","startupProbe":{"failureThreshold":60,"periodSeconds":15}}]}}}}'
+  kubectl -n cattle-system delete pod -l app=rancher -n cattle-system --wait=false
+  kubectl -n cattle-system wait --for=condition=ready pod -l app=rancher --timeout=900s
   echo "rancher is ready."
 }
 
@@ -75,15 +89,31 @@ main() {
   set_default_ingress_class
   install_rancher
 
-  TOKEN=$(kubectl -n cattle-system get secret --field-selector type=rancher_set_password -o jsonpath='{.items[0].data.password}' | base64 -d)
-  PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)
+  # rancher 2.15+ stores the first-boot admin password in bootstrap-secret
+  # (older versions: rancher_set_password). Give seeding up to 2 min.
+  TOKEN=""
+  i=0
+  while [ "$i" -lt 24 ] && [ -z "$TOKEN" ]; do
+    TOKEN=$(kubectl -n cattle-system get secret bootstrap-secret \
+      -o jsonpath='{.data.bootstrapPassword}' 2>/dev/null | base64 -d 2>/dev/null || true)
+    if [ -z "$TOKEN" ]; then
+      TOKEN=$(kubectl -n cattle-system get secret --field-selector type=rancher_set_password \
+        -o jsonpath='{.items[0].data.password}' 2>/dev/null | base64 -d 2>/dev/null || true)
+    fi
+    i=$((i + 1))
+    sleep 5
+  done
+  # AL2023 defaults to IMDSv2 - a session token is required
+  IMDS_TOK=$(curl -s -X PUT -H "X-aws-ec2-metadata-token-ttl-seconds: 300" http://169.254.169.254/latest/api/token 2>/dev/null || true)
+  PUBLIC_IP=$(curl -s -H "X-aws-ec2-metadata-token: ${IMDS_TOK}" http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null || true)
+  [ -n "$PUBLIC_IP" ] || PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null || true)
 
   echo ""
   echo "============================================================"
   echo "  RANCHER:   http://${PUBLIC_IP}:3080"
   echo "  USER:      admin"
   echo "  TOKEN:     ${TOKEN}"
-  echo "  APP URL:   http://${PUBLIC_IP}/  (after k8s/deploy.sh)"
+  echo "  APP URL:   http://${PUBLIC_IP}:30080/  (after k8s/deploy.sh)"
   echo "  KUBECONFIG: /etc/rancher/k3s/k3s.yaml (copy to your machine)"
   echo "============================================================"
 }

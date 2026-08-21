@@ -49,6 +49,8 @@ spec:
                 secretKeyRef:
                   name: api-config
                   key: postgresql-connection-string
+            - name: AWSApi__ImageApiUrl
+              value: "https://dev.image-api.statikk.net"
             - name: AWSApi__ImageApiKey
               valueFrom:
                 secretKeyRef:
