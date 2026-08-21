@@ -3,7 +3,7 @@ data "aws_ami" "al2" {
   owners      = ["amazon"]
 
   filter {
-    name   = "name"
+    name = "name"
     # AL2023 (kernel 6.1): cgroup v2 by default, required by modern k3s kubelet
     values = ["al2023-ami-2023*kernel-6.1-x86_64"]
   }
