@@ -63,3 +63,9 @@ variable "ssh_user" {
   type        = string
   default     = "ec2-user"
 }
+
+variable "ssh_key_name" {
+  description = "Name of an EC2 key pair in this account to attach to the instances (import your local public key: aws ec2 import-key-pair)"
+  type        = string
+  default     = "aws-deployment-dev"
+}

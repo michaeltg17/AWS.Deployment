@@ -436,9 +436,9 @@ terraform/*.tfstate
 terraform/*.tfstate.*
 terraform/terraform.tfvars
 
-# Deploy values templates (non-secret) - exempt from *.env above
-!k8s/environments/*.env
+# Deploy values (per-env, non-secret + secrets) - fill from *.env.example
+k8s/environments/*.env
 
-# Deploy secrets (per-env filled secrets)
-k8s/environments/*.secrets.env
 
+# Local kubectl config (contains client cert/key) - created by the deploy docs at repo root
+.kubeconfig

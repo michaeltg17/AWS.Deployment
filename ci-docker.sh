@@ -3,6 +3,10 @@
 # the current working tree (mounted at /app, so uncommitted changes count).
 set -euo pipefail
 
+# Keep MSYS2 (Git Bash on Windows) from rewriting args like -w /app
+# to C:/Program Files/Git/app. No-op on Linux/CI.
+export MSYS_NO_PATHCONV=1
+
 IMAGE="aws-deployment-ci"
 
 echo "Building CI image..."

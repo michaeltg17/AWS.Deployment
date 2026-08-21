@@ -3,8 +3,9 @@ data "aws_ami" "al2" {
   owners      = ["amazon"]
 
   filter {
-    name   = "name"
-    values = ["amzn2-ami-hvm-*-x86_64-gp2"]
+    name = "name"
+    # AL2023 (kernel 6.1): cgroup v2 by default, required by modern k3s kubelet
+    values = ["al2023-ami-2023*kernel-6.1-x86_64"]
   }
 
   filter {
@@ -28,6 +29,7 @@ resource "aws_instance" "control" {
   subnet_id                   = aws_subnet.public.id
   vpc_security_group_ids      = [aws_security_group.control.id]
   associate_public_ip_address = true
+  key_name                    = var.ssh_key_name
 
   root_block_device {
     volume_type           = "gp3"
@@ -41,7 +43,8 @@ resource "aws_instance" "control" {
     hostname: ${var.project_name}-control
     runcmd:
       - if [ ! -f /swapfile ]; then fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile; fi
-      - curl -sfL https://get.k3s.io | K3S_TOKEN=${random_string.k3s_token.result} sh -s - server --disable traefik --disable servicelb --write-kubeconfig-mode 644
+      - if [ "$(stat -fc %T /sys/fs/cgroup/)" != "cgroup2fs" ]; then grubby --update-kernel=ALL --args="systemd.unified_cgroup_hierarchy=1" && reboot; fi
+      - curl -sfL https://get.k3s.io | INSTALL_K3S_SKIP_SELINUX_RPM=true K3S_TOKEN=${random_string.k3s_token.result} sh -s - server --disable traefik --disable servicelb --write-kubeconfig-mode 644
   EOF
 
   tags = merge(local.tags, { Name = "${var.project_name}-control" })
@@ -61,6 +64,7 @@ resource "aws_instance" "worker" {
   subnet_id                   = aws_subnet.public.id
   vpc_security_group_ids      = [aws_security_group.worker.id]
   associate_public_ip_address = true
+  key_name                    = var.ssh_key_name
 
   depends_on = [aws_instance.control]
 
@@ -76,7 +80,8 @@ resource "aws_instance" "worker" {
     hostname: ${var.project_name}-worker-${count.index}
     runcmd:
       - if [ ! -f /swapfile ]; then fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile; fi
-      - curl -sfL https://get.k3s.io | K3S_URL=https://${aws_instance.control.public_ip} K3S_TOKEN=${random_string.k3s_token.result} sh -s - agent
+      - if [ "$(stat -fc %T /sys/fs/cgroup/)" != "cgroup2fs" ]; then grubby --update-kernel=ALL --args="systemd.unified_cgroup_hierarchy=1" && reboot; fi
+      - curl -sfL https://get.k3s.io | INSTALL_K3S_SKIP_SELINUX_RPM=true K3S_URL=https://${aws_instance.control.private_ip}:6443 K3S_TOKEN=${random_string.k3s_token.result} sh -s - agent
   EOF
 
   tags = merge(local.tags, { Name = "${var.project_name}-worker-${count.index}" })
