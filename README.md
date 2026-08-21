@@ -1,6 +1,6 @@
 # AWS.Deployment
 
-Deploy a small full-stack app — **API + React + PostgreSQL** — onto **Kubernetes (k3s) on AWS EC2**, managed with **Rancher**. No API gateway in this phase (Apigee comes later, in front of the same entrypoint).
+Deploy a small full-stack app — **API + React + PostgreSQL** — onto **Kubernetes (k3s) on AWS EC2**, managed with **Rancher**. No load balancer / API gateway: ingress-nginx runs in hostNetwork mode on the nodes, so the app is served directly on the node IPs at `:80` (`:443` is mapped, TLS comes with a domain/cert later).
 
 ```
                 Internet
@@ -19,7 +19,7 @@ Deploy a small full-stack app — **API + React + PostgreSQL** — onto **Kubern
 
 - **Terraform** provisions everything (VPC, subnet, SGs, 2 EC2 nodes). Every resource is tagged (`Project=aws-deployment`, `Environment=dev`, `ManagedBy=terraform`) so it is easy to find and delete — AWS has no resource groups, tags are the equivalent.
 - **k3s** installs itself on the nodes via cloud-init (shared random token, so workers auto-join).
-- **Rancher** is installed on the control node via Helm (NodePort :3080).
+- **Rancher** is installed on the control node via Helm (NodePort :31591).
 - **One image per app**: `ghcr.io/michaeltg17/aws-{api,react,db-migrations}:<sha7>`. Environments differ only by deploy-time values (`API_URL`, tags) in `k8s/environments/<env>.env` — no per-environment image builds.
 
 ## Repo layout
@@ -137,7 +137,7 @@ cd terraform && terraform destroy
 
 ## Known limitations (by design, for this phase)
 
-- Plain HTTP (no TLS) — no domain yet; TLS comes with the Apigee phase.
+- Plain HTTP (no TLS) — no domain/cert yet; the ingress controller already owns node `:443`, TLS is a later step.
 - `ssh_allowed_cidrs` / `app_allowed_cidrs` default to `0.0.0.0/0` — lock down before leaving dev.
 - Single-AZ, no HA (one control node). Fine for validation; bump `worker_instance_count` / add nodes later.
 - PostgreSQL is a single-node StatefulSet on `local-path` storage (fits in the 20GB root EBS). Swap for a managed PG or RWO EBS PVC before prod.
