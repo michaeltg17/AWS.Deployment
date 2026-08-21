@@ -50,7 +50,7 @@ spec:
                   name: api-config
                   key: postgresql-connection-string
             - name: AWSApi__ImageApiUrl
-              value: "https://dev.image-api.statikk.net"
+              value: "__IMAGE_API_URL__"
             - name: AWSApi__ImageApiKey
               valueFrom:
                 secretKeyRef:

@@ -4,7 +4,7 @@
 #   ./deploy.sh dev
 #
 # Reads:
-#   environments/<env>.env             (DOMAIN, image tags, API_URL)
+#   environments/<env>.env             (DOMAIN, IMAGE_API_URL, API_URL, image tags)
 #   environments/<env>.secrets.env    (DB_PASSWORD, IMAGE_API_KEY - NOT committed)
 #
 # Requires: kubectl with context = the k3s cluster, helm (for bootstrap only).
@@ -16,7 +16,7 @@ K8S_DIR="$(cd "$(dirname "$0")" && pwd)"
 ENV_FILE="$K8S_DIR/environments/$ENV_NAME.env"
 SECRETS_FILE="$K8S_DIR/environments/$ENV_NAME.secrets.env"
 
-[ -f "$ENV_FILE" ] || { echo "ERROR: missing $ENV_FILE"; exit 1; }
+[ -f "$ENV_FILE" ] || { echo "ERROR: missing $ENV_FILE (copy $ENV_NAME.env.example to $ENV_FILE and fill in values)"; exit 1; }
 [ -f "$SECRETS_FILE" ] || { echo "ERROR: missing $SECRETS_FILE (copy .secrets.env.example and fill in values)"; exit 1; }
 
 # shellcheck disable=SC1090
@@ -26,6 +26,7 @@ source "$SECRETS_FILE"
 
 : "${DOMAIN:?set DOMAIN (node public IP or domain) in $ENV_FILE}"
 : "${API_URL:?set API_URL in $ENV_FILE}"
+: "${IMAGE_API_URL:?set IMAGE_API_URL in $ENV_FILE}"
 : "${API_IMAGE_TAG:?set API_IMAGE_TAG in $ENV_FILE}"
 : "${REACT_IMAGE_TAG:?set REACT_IMAGE_TAG in $ENV_FILE}"
 : "${MIGRATIONS_IMAGE_TAG:?set MIGRATIONS_IMAGE_TAG in $ENV_FILE}"
@@ -41,6 +42,7 @@ render() {
     sed \
       -e "s|__DOMAIN__|${DOMAIN}|g" \
       -e "s|__API_URL__|${API_URL}|g" \
+      -e "s|__IMAGE_API_URL__|${IMAGE_API_URL}|g" \
       -e "s|__API_IMAGE_TAG__|${API_IMAGE_TAG}|g" \
       -e "s|__REACT_IMAGE_TAG__|${REACT_IMAGE_TAG}|g" \
       -e "s|__MIGRATIONS_IMAGE_TAG__|${MIGRATIONS_IMAGE_TAG}|g" \
@@ -97,7 +99,7 @@ echo ""
 echo "============================================================"
   echo "  App:      http://${DOMAIN}:30080/"
   echo "  API:      http://${DOMAIN}:30080/api/  (via ingress)"
-echo "  Rancher:  http://<control-ip>:3080"
+  echo "  Rancher:  http://<control-ip>:31591"
 echo "============================================================"
 echo ""
 echo "Quick check:"

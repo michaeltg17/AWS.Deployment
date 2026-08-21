@@ -37,7 +37,7 @@ k8s/
   react.yaml              configmap (API_URL) + deployment + service
   ingress.yaml            /api -> api, / -> react
   environments/
-    dev.env               domain, image tags, API_URL
+    dev.env.example        copy to dev.env: domain, IMAGE_API_URL, API_URL, tags
     dev.secrets.env.example  copy to dev.secrets.env, fill secrets
   deploy.sh               renders + applies everything in order
 ```
@@ -81,12 +81,12 @@ k8s/
 
 4. **Fill env values**:
 
-   ```sh
-   # k8s/environments/dev.env  -> set DOMAIN=$CTRL_IP
-   #    (API_URL should match, e.g. http://$CTRL_IP/api)
-   cp k8s/environments/dev.secrets.env.example k8s/environments/dev.secrets.env
-   #    fill DB_PASSWORD= and IMAGE_API_KEY=
-   ```
+    ```sh
+    cp k8s/environments/dev.env.example k8s/environments/dev.env
+    #    fill DOMAIN=$CTRL_IP and IMAGE_API_URL=(image API base URL for this env)
+    cp k8s/environments/dev.secrets.env.example k8s/environments/dev.secrets.env
+    #    fill DB_PASSWORD= and IMAGE_API_KEY=
+    ```
 
 5. **Deploy**:
 
@@ -100,11 +100,11 @@ k8s/
 6. **Validate**:
 
    ```sh
-   curl http://$CTRL_IP/api/            # api through ingress
-   curl http://$CTRL_IP/                # react through ingress
+    curl http://$CTRL_IP:30080/api/      # api through ingress (nginx NodePort)
+    curl http://$CTRL_IP:30080/          # react through ingress
    ```
 
-   Rancher dashboard: `http://$CTRL_IP:3080` (admin / token printed by step 2; add the cluster with a local kubeconfig import).
+    Rancher dashboard: `http://$CTRL_IP:31591` (admin / token printed by step 2; add the cluster with a local kubeconfig import).
 
 ## Run CI locally
 
