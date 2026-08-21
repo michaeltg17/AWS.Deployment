@@ -7,7 +7,7 @@ Deploy a small full-stack app — **API + React + PostgreSQL** — onto **Kubern
                    |
         EC2 public IP (node)
                    |
-        nginx-ingress (NodePort :80)
+         nginx-ingress (hostNetwork :80/:443, one per node)
           /api/*            /*
              |               |
           aws-api        aws-react
@@ -100,8 +100,8 @@ k8s/
 6. **Validate**:
 
    ```sh
-    curl http://$CTRL_IP:30080/api/      # api through ingress (nginx NodePort)
-    curl http://$CTRL_IP:30080/          # react through ingress
+    curl http://$CTRL_IP/api/            # api through ingress (host :80)
+    curl http://$CTRL_IP/                # react through ingress (host :80)
    ```
 
     Rancher dashboard: `http://$CTRL_IP:31591` (admin / token printed by step 2; add the cluster with a local kubeconfig import).
@@ -136,6 +136,8 @@ cd terraform && terraform destroy
 `terraform destroy` removes only what this config created (EC2, EBS, VPC, SGs). Verify: `aws ec2 describe-instances --filters "tag:Project=aws-deployment"` returns none.
 
 ## Known limitations (by design, for this phase)
+
+- Ingress-nginx runs `hostNetwork` (no load balancer): each node's host `:80`/`:443` is owned by the ingress controller, so nothing else may bind those ports on the nodes. Pod-level load balancing is still done by k8s (Services).
 
 - Plain HTTP (no TLS) — no domain/cert yet; the ingress controller already owns node `:443`, TLS is a later step.
 - `ssh_allowed_cidrs` / `app_allowed_cidrs` default to `0.0.0.0/0` — lock down before leaving dev.
