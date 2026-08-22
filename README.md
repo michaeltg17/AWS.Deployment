@@ -106,6 +106,25 @@ k8s/
 
     Rancher dashboard: `http://$CTRL_IP:31591` (admin / token printed by step 2; add the cluster with a local kubeconfig import).
 
+## Deploy a new build (manual CD)
+
+The app repos (`AWS.Api`, `AWS.React`) build and push their ghcr images on their own CI. To deploy the latest `main` build to a cluster you press a button — no tags to edit by hand:
+
+1. GitHub → **Actions** → **Deploy** (`.github/workflows/cd.yml`) → choose `env` → **Run workflow**.
+2. The workflow resolves the `main` sha7 tags of the app repos, renders the env files, and runs `k8s/deploy.sh <env>` against the cluster from the kubeconfig secret.
+
+Required per environment (repo settings → Secrets & variables → Actions):
+
+| Type     | Name (dev)        | Value                                                                    |
+| -------- | ----------------- | ------------------------------------------------------------------------ |
+| Secret   | `KUBECONFIG_DEV`  | kubeconfig file content (created in step 3)                              |
+| Secret   | `DB_PASSWORD_DEV` | PostgreSQL password — must match what the cluster was deployed with       |
+| Secret   | `IMAGE_API_KEY_DEV` | image API key for this env                                              |
+| Variable | `DOMAIN_DEV`      | cluster node public IP (or domain)                                        |
+| Variable | `IMAGE_API_URL_DEV` | image API base URL for this env (e.g. the dev image-api host)           |
+
+If you rebuild the cluster (terraform destroy/apply), regenerate `dev.secrets.env`, redeploy, and update `DB_PASSWORD_DEV`/`KUBECONFIG_DEV` again.
+
 ## Run CI locally
 
 The same checks that run in GitHub Actions also run in a docker container, so no local tooling is needed:
