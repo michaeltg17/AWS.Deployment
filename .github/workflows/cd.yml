@@ -1,9 +1,9 @@
-# Manual continuous deployment: deploys the latest main image tags of the app
-# repos (AWS.Api, AWS.React) to a k3s cluster. The app repos build and push
-# their ghcr images themselves (their own CI) - this workflow only resolves
-# the tags and runs k8s/deploy.sh.
+# Manual continuous deployment: deploys the app repos' (AWS.Api, AWS.React)
+# image tags to a k3s cluster. The app repos build and push ghcr images
+# themselves (tagged <sha7> + latest); this workflow picks the sha7 of the
+# app repos' main HEAD (or an explicit override) and runs k8s/deploy.sh.
 #
-# Trigger: Actions tab -> "Deploy" -> choose env -> Run workflow.
+# Trigger: Actions tab -> "Deploy" -> choose env (optionally pin tags) -> Run.
 #
 # Required per env (repo settings):
 #   secrets: KUBECONFIG_<ENV>   (kubeconfig file content for that cluster)
@@ -22,6 +22,14 @@ on:
         type: choice
         options: [dev, qa, prod]
         default: dev
+      api_tag:
+        description: "Optional - api + migrations image sha7 (empty = main HEAD)"
+        type: string
+        default: ""
+      react_tag:
+        description: "Optional - react image sha7 (empty = main HEAD)"
+        type: string
+        default: ""
 
 jobs:
   deploy:
@@ -41,10 +49,15 @@ jobs:
       - name: Install kubectl
         run: curl -fsSL https://get.k8s.io | bash
 
-      - name: Resolve latest image tags (app repos' main)
+      - name: Resolve image tags (main HEAD sha7, or explicit override)
+        env:
+          API_TAG_OVERRIDE: ${{ github.event.inputs.api_tag }}
+          REACT_TAG_OVERRIDE: ${{ github.event.inputs.react_tag }}
         run: |
-          api_tag=$(git ls-remote https://github.com/michaeltg17/AWS.Api.git refs/heads/main | awk '{print substr($1,1,7)}')
-          react_tag=$(git ls-remote https://github.com/michaeltg17/AWS.React.git refs/heads/main | awk '{print substr($1,1,7)}')
+          api_tag="${API_TAG_OVERRIDE:-$(git ls-remote https://github.com/michaeltg17/AWS.Api.git refs/heads/main | awk '{print substr($1,1,7)}')}"
+          react_tag="${REACT_TAG_OVERRIDE:-$(git ls-remote https://github.com/michaeltg17/AWS.React.git refs/heads/main | awk '{print substr($1,1,7)}')}"
+          [ -n "$api_tag" ] || { echo "ERROR: could not resolve an api image tag"; exit 1; }
+          [ -n "$react_tag" ] || { echo "ERROR: could not resolve a react image tag"; exit 1; }
           echo "Deploying api=$api_tag react=$react_tag to $ENV_NAME"
           {
             echo "API_TAG=$api_tag"

@@ -5,22 +5,25 @@ Deploy a small full-stack app — **API + React + PostgreSQL** — onto **Kubern
 ```
                 Internet
                    |
-        EC2 public IP (node)
+        Node public IP  :80  (and :443 - mapped, TLS later)
                    |
-         nginx-ingress (hostNetwork :80/:443, one per node)
-          /api/*            /*
-             |               |
-          aws-api        aws-react
-           (ghcr)         (ghcr)
+        NGINX Ingress Pod (hostNetwork, one per node)
+          /api/*              /*
+             |                 |
+        K8s Service         K8s Service
+             |                 |
+        api Pod A / B       react Pod A / B
              |
         postgres 18.6 (EBS PVC)
         migrations job (ghcr)
 ```
 
+No load balancer and no NodePort in the app path — the ingress pod runs in the host network and serves the node's `:80`/`:443` directly (k8s Services still load balance the pods). NodePort is used only by Rancher (`:31591`).
+
 - **Terraform** provisions everything (VPC, subnet, SGs, 2 EC2 nodes). Every resource is tagged (`Project=aws-deployment`, `Environment=dev`, `ManagedBy=terraform`) so it is easy to find and delete — AWS has no resource groups, tags are the equivalent.
 - **k3s** installs itself on the nodes via cloud-init (shared random token, so workers auto-join).
 - **Rancher** is installed on the control node via Helm (NodePort :31591).
-- **One image per app**: `ghcr.io/michaeltg17/aws-{api,react,db-migrations}:<sha7>`. Environments differ only by deploy-time values (`API_URL`, tags) in `k8s/environments/<env>.env` — no per-environment image builds.
+- **One image per app**: `ghcr.io/michaeltg17/aws-{api,react,db-migrations}`, tagged `latest` + `<sha7>` by each app repo's CI. Deploys pin `<sha7>` (latest code, stable image); environments differ only by deploy-time values (`API_URL`, tags) in `k8s/environments/<env>.env` — no per-environment image builds.
 
 ## Repo layout
 
@@ -108,10 +111,10 @@ k8s/
 
 ## Deploy a new build (manual CD)
 
-The app repos (`AWS.Api`, `AWS.React`) build and push their ghcr images on their own CI. To deploy the latest `main` build to a cluster you press a button — no tags to edit by hand:
+The app repos (`AWS.Api`, `AWS.React`) build and push their ghcr images on their own CI. To deploy the latest build to a cluster you press a button — no tags to edit by hand:
 
 1. GitHub → **Actions** → **Deploy** (`.github/workflows/cd.yml`) → choose `env` → **Run workflow**.
-2. The workflow resolves the `main` sha7 tags of the app repos, renders the env files, and runs `k8s/deploy.sh <env>` against the cluster from the kubeconfig secret.
+2. The workflow deploys the `sha7` of the app repos' `main` HEAD (latest code, pinned image) — or a specific `sha7` if you fill the optional `api_tag` / `react_tag` fields (pin or roll back) — renders the env files, and runs `k8s/deploy.sh <env>` against the cluster from the kubeconfig secret.
 
 Required per environment (repo settings → Secrets & variables → Actions):
 
@@ -137,11 +140,7 @@ Builds the `aws-deployment-ci` tools image once (terraform, shellcheck, python3,
 
 ## Upgrade the app
 
-```sh
-# new image tag in environments/<env>.env (API_IMAGE_TAG etc.), then:
-kubectl -n app delete job migrations
-./deploy.sh dev                        # re-runs migrations + rolls api/react
-```
+Push to an app repo's `main` (its CI pushes the `sha7` + `latest` ghcr images), then Actions → **Deploy** with the env. The run deploys that commit's `sha7` and includes the migrations job + rolling the deployments. To pin or roll back, fill the `api_tag` / `react_tag` fields with a specific `sha7`.
 
 ## Destroy everything (after validation)
 
