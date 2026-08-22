@@ -1,4 +1,4 @@
-data "aws_ami" "al2" {
+data "aws_ami" "al2023" {
   most_recent = true
   owners      = ["amazon"]
 
@@ -24,7 +24,7 @@ resource "random_string" "k3s_token" {
 # Control-plane node: k3s server + rancher (installed later via
 # bootstrap/setup-control-node.sh). Installs itself on first boot.
 resource "aws_instance" "control" {
-  ami                         = data.aws_ami.al2.id
+  ami                         = data.aws_ami.al2023.id
   instance_type               = var.instance_type
   subnet_id                   = aws_subnet.public.id
   vpc_security_group_ids      = [aws_security_group.control.id]
@@ -59,7 +59,7 @@ resource "aws_instance" "control" {
 resource "aws_instance" "worker" {
   count = var.worker_instance_count
 
-  ami                         = data.aws_ami.al2.id
+  ami                         = data.aws_ami.al2023.id
   instance_type               = var.instance_type
   subnet_id                   = aws_subnet.public.id
   vpc_security_group_ids      = [aws_security_group.worker.id]

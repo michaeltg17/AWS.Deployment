@@ -27,7 +27,15 @@ resource "aws_security_group" "control" {
   }
 
   ingress {
-    description = "App via nginx NodePort (30080/30443)"
+    description = "App via ingress-nginx hostNetwork (80/443)"
+    from_port   = 80
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = var.app_allowed_cidrs
+  }
+
+  ingress {
+    description = "Rancher NodePort (31591/30682)"
     from_port   = 30000
     to_port     = 32767
     protocol    = "tcp"
@@ -85,7 +93,15 @@ resource "aws_security_group" "worker" {
   }
 
   ingress {
-    description = "App via nginx NodePort (30080/30443)"
+    description = "App via ingress-nginx hostNetwork (80/443)"
+    from_port   = 80
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = var.app_allowed_cidrs
+  }
+
+  ingress {
+    description = "Rancher NodePort (31591/30682)"
     from_port   = 30000
     to_port     = 32767
     protocol    = "tcp"

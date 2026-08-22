@@ -1,13 +1,13 @@
 # AWS.Deployment
 
-Deploy a small full-stack app — **API + React + PostgreSQL** — onto **Kubernetes (k3s) on AWS EC2**, managed with **Rancher**. No API gateway in this phase (Apigee comes later, in front of the same entrypoint).
+Deploy a small full-stack app — **API + React + PostgreSQL** — onto **Kubernetes (k3s) on AWS EC2**, managed with **Rancher**. No load balancer / API gateway: ingress-nginx runs in hostNetwork mode on the nodes, so the app is served directly on the node IPs at `:80` (`:443` is mapped, TLS comes with a domain/cert later).
 
 ```
                 Internet
                    |
         EC2 public IP (node)
                    |
-        nginx-ingress (NodePort :80)
+         nginx-ingress (hostNetwork :80/:443, one per node)
           /api/*            /*
              |               |
           aws-api        aws-react
@@ -19,7 +19,7 @@ Deploy a small full-stack app — **API + React + PostgreSQL** — onto **Kubern
 
 - **Terraform** provisions everything (VPC, subnet, SGs, 2 EC2 nodes). Every resource is tagged (`Project=aws-deployment`, `Environment=dev`, `ManagedBy=terraform`) so it is easy to find and delete — AWS has no resource groups, tags are the equivalent.
 - **k3s** installs itself on the nodes via cloud-init (shared random token, so workers auto-join).
-- **Rancher** is installed on the control node via Helm (NodePort :3080).
+- **Rancher** is installed on the control node via Helm (NodePort :31591).
 - **One image per app**: `ghcr.io/michaeltg17/aws-{api,react,db-migrations}:<sha7>`. Environments differ only by deploy-time values (`API_URL`, tags) in `k8s/environments/<env>.env` — no per-environment image builds.
 
 ## Repo layout
@@ -100,11 +100,30 @@ k8s/
 6. **Validate**:
 
    ```sh
-    curl http://$CTRL_IP:30080/api/      # api through ingress (nginx NodePort)
-    curl http://$CTRL_IP:30080/          # react through ingress
+    curl http://$CTRL_IP/api/            # api through ingress (host :80)
+    curl http://$CTRL_IP/                # react through ingress (host :80)
    ```
 
     Rancher dashboard: `http://$CTRL_IP:31591` (admin / token printed by step 2; add the cluster with a local kubeconfig import).
+
+## Deploy a new build (manual CD)
+
+The app repos (`AWS.Api`, `AWS.React`) build and push their ghcr images on their own CI. To deploy the latest `main` build to a cluster you press a button — no tags to edit by hand:
+
+1. GitHub → **Actions** → **Deploy** (`.github/workflows/cd.yml`) → choose `env` → **Run workflow**.
+2. The workflow resolves the `main` sha7 tags of the app repos, renders the env files, and runs `k8s/deploy.sh <env>` against the cluster from the kubeconfig secret.
+
+Required per environment (repo settings → Secrets & variables → Actions):
+
+| Type     | Name (dev)        | Value                                                                    |
+| -------- | ----------------- | ------------------------------------------------------------------------ |
+| Secret   | `KUBECONFIG_DEV`  | kubeconfig file content (created in step 3)                              |
+| Secret   | `DB_PASSWORD_DEV` | PostgreSQL password — must match what the cluster was deployed with       |
+| Secret   | `IMAGE_API_KEY_DEV` | image API key for this env                                              |
+| Variable | `DOMAIN_DEV`      | cluster node public IP (or domain)                                        |
+| Variable | `IMAGE_API_URL_DEV` | image API base URL for this env (e.g. the dev image-api host)           |
+
+If you rebuild the cluster (terraform destroy/apply), regenerate `dev.secrets.env`, redeploy, and update `DB_PASSWORD_DEV`/`KUBECONFIG_DEV` again.
 
 ## Run CI locally
 
@@ -137,7 +156,9 @@ cd terraform && terraform destroy
 
 ## Known limitations (by design, for this phase)
 
-- Plain HTTP (no TLS) — no domain yet; TLS comes with the Apigee phase.
+- Ingress-nginx runs `hostNetwork` (no load balancer): each node's host `:80`/`:443` is owned by the ingress controller, so nothing else may bind those ports on the nodes. Pod-level load balancing is still done by k8s (Services).
+
+- Plain HTTP (no TLS) — no domain/cert yet; the ingress controller already owns node `:443`, TLS is a later step.
 - `ssh_allowed_cidrs` / `app_allowed_cidrs` default to `0.0.0.0/0` — lock down before leaving dev.
 - Single-AZ, no HA (one control node). Fine for validation; bump `worker_instance_count` / add nodes later.
 - PostgreSQL is a single-node StatefulSet on `local-path` storage (fits in the 20GB root EBS). Swap for a managed PG or RWO EBS PVC before prod.
