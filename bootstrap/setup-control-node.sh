@@ -2,7 +2,7 @@
 # Run on the k3s CONTROL node (ssh into it first):
 #   scp setup-control-node.sh <user>@<control-ip>:~ && ssh <user>@<control-ip> 'sh ~/setup-control-node.sh'
 #
-# Installs: helm, ingress-nginx (NodePort), default ingress class, rancher.
+# Installs: helm, ingress-nginx (hostNetwork, node :80/:443), default ingress class, rancher.
 # Prints the rancher URL + admin token at the end.
 
 set -eu
@@ -33,19 +33,23 @@ install_helm() {
 }
 
 install_ingress_nginx() {
-  echo "Installing ingress-nginx (NodePort 30080/30443)..."
+  echo "Installing ingress-nginx (hostNetwork, node :80/:443)..."
   helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
   helm repo update
   # clear any release left pending from a previously failed install
   if ! helm list --deployed -q --namespace ingress-nginx 2>/dev/null | grep -qx "ingress-nginx"; then
     helm uninstall ingress-nginx --namespace ingress-nginx --ignore-not-found >/dev/null 2>&1 || true
   fi
-  # NodePort values must be in 30000-32767, so the app is served on :30080
+  # no load balancer: the controller runs in each node's host network (one per
+  # node via DaemonSet) and binds the node's :80/:443 directly. Pod-level load
+  # balancing still happens in-cluster (Services/iptables). Requires ports
+  # 80/443 to be free on the nodes - nothing else uses them here (k3s runs on
+  # 6443, traefik/servicelb are disabled).
   helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
     --namespace ingress-nginx --create-namespace \
-    --set controller.service.type=NodePort \
-    --set controller.service.nodePorts.http=30080 \
-    --set controller.service.nodePorts.https=30443
+    --set controller.kind=DaemonSet \
+    --set controller.hostNetwork=true \
+    --set controller.service.type=ClusterIP
   # later steps create Ingress resources; the admission webhook must be available
   kubectl -n ingress-nginx wait --for=condition=ready pod -l app.kubernetes.io/component=controller --timeout=180s
 }
@@ -110,10 +114,10 @@ main() {
 
   echo ""
   echo "============================================================"
-  echo "  RANCHER:   http://${PUBLIC_IP}:3080"
+  echo "  RANCHER:   http://${PUBLIC_IP}:31591  (NodePort, see 'kubectl -n cattle-system get svc rancher')"
   echo "  USER:      admin"
   echo "  TOKEN:     ${TOKEN}"
-  echo "  APP URL:   http://${PUBLIC_IP}:30080/  (after k8s/deploy.sh)"
+  echo "  APP URL:   http://${PUBLIC_IP}/  (after k8s/deploy.sh)"
   echo "  KUBECONFIG: /etc/rancher/k3s/k3s.yaml (copy to your machine)"
   echo "============================================================"
 }

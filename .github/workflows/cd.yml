@@ -1,0 +1,89 @@
+# Manual continuous deployment: deploys the app repos' (AWS.Api, AWS.React)
+# image tags to a k3s cluster. The app repos build and push ghcr images
+# themselves (tagged <sha7> + latest); this workflow picks the sha7 of the
+# app repos' main HEAD (or an explicit override) and runs k8s/deploy.sh.
+#
+# Trigger: Actions tab -> "Deploy" -> choose env (optionally pin tags) -> Run.
+#
+# Required per env (repo settings):
+#   secrets: KUBECONFIG_<ENV>   (kubeconfig file content for that cluster)
+#            DB_PASSWORD_<ENV>  (must match the cluster's postgresql secret)
+#            IMAGE_API_KEY_<ENV>
+#   vars:    DOMAIN_<ENV>       (cluster node public IP or domain)
+#            IMAGE_API_URL_<ENV> (image API base URL for that env)
+
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      env:
+        description: "Target environment"
+        type: choice
+        options: [dev, qa, prod]
+        default: dev
+      api_tag:
+        description: "Optional - api + migrations image sha7 (empty = main HEAD)"
+        type: string
+        default: ""
+      react_tag:
+        description: "Optional - react image sha7 (empty = main HEAD)"
+        type: string
+        default: ""
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      ENV_NAME: ${{ github.event.inputs.env }}
+      DOMAIN: ${{ vars['DOMAIN_' + github.event.inputs.env] }}
+      IMAGE_API_URL: ${{ vars['IMAGE_API_URL_' + github.event.inputs.env] }}
+      DB_PASSWORD: ${{ secrets['DB_PASSWORD_' + github.event.inputs.env] }}
+      IMAGE_API_KEY: ${{ secrets['IMAGE_API_KEY_' + github.event.inputs.env] }}
+      KUBECONFIG_CONTENT: ${{ secrets['KUBECONFIG_' + github.event.inputs.env] }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install kubectl
+        run: curl -fsSL https://get.k8s.io | bash
+
+      - name: Resolve image tags (main HEAD sha7, or explicit override)
+        env:
+          API_TAG_OVERRIDE: ${{ github.event.inputs.api_tag }}
+          REACT_TAG_OVERRIDE: ${{ github.event.inputs.react_tag }}
+        run: |
+          api_tag="${API_TAG_OVERRIDE:-$(git ls-remote https://github.com/michaeltg17/AWS.Api.git refs/heads/main | awk '{print substr($1,1,7)}')}"
+          react_tag="${REACT_TAG_OVERRIDE:-$(git ls-remote https://github.com/michaeltg17/AWS.React.git refs/heads/main | awk '{print substr($1,1,7)}')}"
+          [ -n "$api_tag" ] || { echo "ERROR: could not resolve an api image tag"; exit 1; }
+          [ -n "$react_tag" ] || { echo "ERROR: could not resolve a react image tag"; exit 1; }
+          echo "Deploying api=$api_tag react=$react_tag to $ENV_NAME"
+          {
+            echo "API_TAG=$api_tag"
+            echo "REACT_TAG=$react_tag"
+          } >> "$GITHUB_ENV"
+
+      - name: Render env files
+        run: |
+          : "${DOMAIN:?set the DOMAIN_$ENV_NAME repository variable}"
+          : "${IMAGE_API_URL:?set the IMAGE_API_URL_$ENV_NAME repository variable}"
+          : "${DB_PASSWORD:?set the DB_PASSWORD_$ENV_NAME repository secret}"
+          : "${IMAGE_API_KEY:?set the IMAGE_API_KEY_$ENV_NAME repository secret}"
+          sed \
+            -e "s|^DOMAIN=.*|DOMAIN=$DOMAIN|" \
+            -e "s|^IMAGE_API_URL=.*|IMAGE_API_URL=$IMAGE_API_URL|" \
+            -e "s|^API_IMAGE_TAG=.*|API_IMAGE_TAG=$API_TAG|" \
+            -e "s|^MIGRATIONS_IMAGE_TAG=.*|MIGRATIONS_IMAGE_TAG=$API_TAG|" \
+            -e "s|^REACT_IMAGE_TAG=.*|REACT_IMAGE_TAG=$REACT_TAG|" \
+            "k8s/environments/$ENV_NAME.env.example" > "k8s/environments/$ENV_NAME.env"
+          printf 'DB_PASSWORD=%s\nIMAGE_API_KEY=%s\n' "$DB_PASSWORD" "$IMAGE_API_KEY" > "k8s/environments/$ENV_NAME.secrets.env"
+
+      - name: Deploy
+        run: |
+          printf '%s\n' "$KUBECONFIG_CONTENT" > "$RUNNER_TEMP/kubeconfig"
+          chmod 600 "$RUNNER_TEMP/kubeconfig"
+          export KUBECONFIG="$RUNNER_TEMP/kubeconfig"
+          kubectl version --client
+          kubectl get nodes
+          bash k8s/deploy.sh "$ENV_NAME"
