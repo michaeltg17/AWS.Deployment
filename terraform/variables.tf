@@ -64,6 +64,12 @@ variable "ssh_user" {
   default     = "ec2-user"
 }
 
+variable "github_repo" {
+  description = "GitHub owner/repo allowed to assume the terraform deploy role via OIDC"
+  type        = string
+  default     = "michaeltg17/AWS.Deployment"
+}
+
 variable "ssh_key_name" {
   description = "Name of an EC2 key pair in this account to attach to the instances (import your local public key: aws ec2 import-key-pair)"
   type        = string
