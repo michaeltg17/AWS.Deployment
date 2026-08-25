@@ -1,6 +1,5 @@
 # Scoped permissions for terraform deploys of this stack, attached to the
-# GitHub OIDC deploy role (below). Local deploys run under the michael
-# admin user, which needs no policy here.
+# GitHub OIDC deploy role (below). Local deploys run under the dev account, which needs no policy here.
 # Delete/terminate is restricted to resources tagged Project=<project_name>,
 # so a botched destroy cannot reach other projects in the account.
 # Reads and non-destructive writes are intentionally untagged: the provider
