@@ -77,10 +77,12 @@ install_rancher() {
     --set replicas=1 \
     --set ingress.tls.source=none \
     --set service.type=NodePort \
-    --set service.nodePort=3080
+    --set service.nodePort=31591
   # cold boot (DB seed + catalog restore) on small nodes can outlive the
-  # chart's default startup probe budget (12 x 10s) - widen it, then restart
-  kubectl -n cattle-system patch deploy rancher --type merge -p '{"spec":{"template":{"spec":{"containers":[{"name":"rancher","startupProbe":{"failureThreshold":60,"periodSeconds":15}}]}}}}'
+  # chart's default startup probe budget (12 x 10s) - widen it, then restart.
+  # strategic merge (not plain merge): JSON merge patch would replace the
+  # whole containers array and drop the image field.
+  kubectl -n cattle-system patch deploy rancher --type strategic -p '{"spec":{"template":{"spec":{"containers":[{"name":"rancher","startupProbe":{"failureThreshold":60,"periodSeconds":15}}]}}}}'
   kubectl -n cattle-system delete pod -l app=rancher -n cattle-system --wait=false
   kubectl -n cattle-system wait --for=condition=ready pod -l app=rancher --timeout=900s
   echo "rancher is ready."

@@ -44,6 +44,17 @@ resource "aws_instance" "control" {
     runcmd:
       - if [ ! -f /swapfile ]; then fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile; fi
       - if [ "$(stat -fc %T /sys/fs/cgroup/)" != "cgroup2fs" ]; then grubby --update-kernel=ALL --args="systemd.unified_cgroup_hierarchy=1" && reboot; fi
+      # add the public IP to the k3s server cert SANs so kubeconfigs that
+      # point at the public IP pass TLS verification (k3s only regenerates
+      # the cert on first boot, so this must exist before k3s starts)
+      - |
+        set -eu
+        IMDS_TOK=$(curl -s -X PUT -H "X-aws-ec2-metadata-token-ttl-seconds: 60" http://169.254.169.254/latest/api/token)
+        PUBLIC_IP=$(curl -s -H "X-aws-ec2-metadata-token: $IMDS_TOK" http://169.254.169.254/latest/meta-data/public-ipv4)
+        if [ -n "$PUBLIC_IP" ]; then
+          mkdir -p /etc/rancher/k3s
+          printf 'tls-san:\n  - %s\n' "$PUBLIC_IP" > /etc/rancher/k3s/config.yaml
+        fi
       - curl -sfL https://get.k3s.io | INSTALL_K3S_SKIP_SELINUX_RPM=true K3S_TOKEN=${random_string.k3s_token.result} sh -s - server --disable traefik --disable servicelb --write-kubeconfig-mode 644
   EOF
 
