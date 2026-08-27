@@ -1,5 +1,8 @@
-# Single entry point. /api/* goes to the API, everything else to the React app.
-# __DOMAIN__ is the node public IP (dev) or a domain name (qa/prod).
+# Single entry point. /api/* goes to the API, everything else to the Next.js
+# app. The ALB itself (internet-facing, :80, own security group) is created
+# and managed by the AWS Load Balancer Controller from this Ingress - see
+# bootstrap/setup-eks.sh. The app URL is the ALB DNS name in
+# .status.loadBalancer (no domain in dev).
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -8,12 +11,16 @@ metadata:
   labels:
     app: app
   annotations:
-    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    kubernetes.io/ingress.class: alb
+    # public ALB
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    # plain HTTP for now (no domain/cert)
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
+    # route to pod IPs directly (no node ports needed)
+    alb.ingress.kubernetes.io/target-type: ip
 spec:
-  ingressClassName: nginx
   rules:
-    - host: __DOMAIN__
-      http:
+    - http:
         paths:
           - path: /api
             pathType: Prefix

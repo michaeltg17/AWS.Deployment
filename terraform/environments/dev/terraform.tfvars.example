@@ -1,0 +1,18 @@
+# Copy to terraform.tfvars (gitignored) and adjust as needed.
+# Only values that differ from the variable defaults need to be listed.
+
+# aws_region  = "us-east-1"
+# aws_profile = ""
+# project_name = "aws-deployment"
+# environment  = "dev"
+
+# RDS master password - MUST equal DB_PASSWORD in k8s/environments/dev.secrets.env
+# and the DB_PASSWORD_DEV GitHub secret.
+db_master_password = "change-me"
+
+# Cost knobs (defaults are the cheap-dev profile):
+# worker_instance_types = ["t3.medium"]   # smallest EKS-supported type
+# worker_desired_size   = 3               # one node per AZ
+# worker_min_size       = 1
+# db_instance_class     = "db.t4g.micro"
+# db_multi_az           = true
