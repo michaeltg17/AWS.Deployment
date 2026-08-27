@@ -5,16 +5,21 @@ Deploy a small full-stack app — **API + Next.js + PostgreSQL** — onto **AWS*
 ```
                  Internet
                     |
-           ALB :80 (internet-facing, created by the
-           AWS Load Balancer Controller from k8s/ingress.yaml)
+       ALB :80 (internet-facing, HTTP)
+       created by the AWS Load Balancer
+       Controller from k8s/ingress.yaml
                     |
-             EKS Ingress  /api/*  ->  API service
-                        /        ->  Next.js service
+             EKS Ingress
+             /api/*  ->  API service
+             /       ->  Next.js service
                     |
-        EKS private subnets (3 AZs, no public IPs)
-        Next.js pod x N     API pod x N
-                                 |
-                        RDS PostgreSQL (Multi-AZ, private)
+  EKS node group (private subnets, 3 AZs, no public IPs)
+  +------------------+     +------------------+
+  | Next.js pods     |     | API pods         |
+  +------------------+     +------------------+
+                                   |
+                          RDS PostgreSQL
+                          (Multi-AZ, private)
 ```
 
 **Terraform owns the infrastructure** (VPC, subnets, NAT, EKS cluster + node group, RDS, IAM incl. the load-balancer-controller role and the GitHub OIDC role). **Kubernetes owns the workloads** (deployments, services, ingress, config, secrets, migrations job). The ALB is an AWS resource but it is created and managed by the controller in-cluster from the Ingress, so route changes are just manifest changes.
