@@ -430,15 +430,11 @@ FodyWeavers.xsd
 
 
 # AWS.Deployment
-# Terraform
-terraform/.terraform/
-terraform/*.tfstate
-terraform/*.tfstate.*
-terraform/terraform.tfvars
+# Terraform (per-environment state + local values)
+terraform/**/.terraform/
+terraform/**/terraform.tfstate
+terraform/**/terraform.tfstate.*
+terraform/**/terraform.tfvars
 
 # Deploy values (per-env, non-secret + secrets) - fill from *.env.example
 k8s/environments/*.env
-
-
-# Local kubectl config (contains client cert/key) - created by the deploy docs at repo root
-.kubeconfig

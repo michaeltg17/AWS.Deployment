@@ -16,7 +16,7 @@ echo "OK: terraform fmt"
 echo
 echo "[2/5] Terraform validate"
 (
-  cd terraform
+  cd terraform/environments/dev
   terraform init -backend=false -input=false
   terraform validate
 )

@@ -1,132 +1,119 @@
 # AWS.Deployment
 
-Deploy a small full-stack app — **API + React + PostgreSQL** — onto **Kubernetes (k3s) on AWS EC2**, managed with **Rancher**. No load balancer / API gateway: ingress-nginx runs in hostNetwork mode on the nodes, so the app is served directly on the node IPs at `:80` (`:443` is mapped, TLS comes with a domain/cert later).
+Deploy a small full-stack app — **API + Next.js + PostgreSQL** — onto **AWS**, managed end to end with **Terraform** (infrastructure) and **Kubernetes manifests** (workloads). No domain in dev: the app is served plain-HTTP on the ALB's DNS name.
 
 ```
-                Internet
-                   |
-        Node public IP  :80  (and :443 - mapped, TLS later)
-                   |
-        NGINX Ingress Pod (hostNetwork, one per node)
-          /api/*              /*
-             |                 |
-        K8s Service         K8s Service
-             |                 |
-        api Pod A / B       react Pod A / B
-             |
-        postgres 18.6 (EBS PVC)
-        migrations job (ghcr)
+                 Internet
+                    |
+           ALB :80 (internet-facing, created by the
+           AWS Load Balancer Controller from k8s/ingress.yaml)
+                    |
+             EKS Ingress  /api/*  ->  API service
+                        /        ->  Next.js service
+                    |
+        EKS private subnets (3 AZs, no public IPs)
+        Next.js pod x N     API pod x N
+                                 |
+                        RDS PostgreSQL (Multi-AZ, private)
 ```
 
-No load balancer and no NodePort in the app path — the ingress pod runs in the host network and serves the node's `:80`/`:443` directly (k8s Services still load balance the pods). NodePort is used only by Rancher (`:31591`).
-
-- **Terraform** provisions everything (VPC, subnet, SGs, 2 EC2 nodes). Every resource is tagged (`Project=aws-deployment`, `Environment=dev`, `ManagedBy=terraform`) so it is easy to find and delete — AWS has no resource groups, tags are the equivalent.
-- **k3s** installs itself on the nodes via cloud-init (shared random token, so workers auto-join).
-- **Rancher** is installed on the control node via Helm (NodePort :31591).
-- **One image per app**: `ghcr.io/michaeltg17/aws-{api,react,db-migrations}`, tagged `latest` + `<sha7>` by each app repo's CI. Deploys pin `<sha7>` (latest code, stable image); environments differ only by deploy-time values (`API_URL`, tags) in `k8s/environments/<env>.env` — no per-environment image builds.
+**Terraform owns the infrastructure** (VPC, subnets, NAT, EKS cluster + node group, RDS, IAM incl. the load-balancer-controller role and the GitHub OIDC role). **Kubernetes owns the workloads** (deployments, services, ingress, config, secrets, migrations job). The ALB is an AWS resource but it is created and managed by the controller in-cluster from the Ingress, so route changes are just manifest changes.
 
 ## Repo layout
 
 ```
-terraform/            IAC: VPC, SGs, EC2 (control + workers), tagged
+terraform/
+  modules/
+    vpc/              VPC, 3 public + 3 private subnets, IGW, 1 NAT
+    eks/              cluster, node group, addons, SGs, aws-auth,
+                      ALB-controller IRSA role, GitHub OIDC role
+    rds/              PostgreSQL instance, subnet group, SG
+  environments/
+    dev/              module wiring + per-env values (tfvars, gitignored)
 bootstrap/
-  setup-control-node.sh   helm + ingress-nginx + rancher (run once, on control node)
+  setup-eks.sh        kubeconfig + wait nodes + helm install ALB controller
 k8s/
   namespace.yaml
-  secrets.yaml            template -> rendered by deploy.sh
-  postgresql.yaml         statefulset + PVC + services
-  migrations-job.yaml     one-shot dbup runner, re-run on upgrades
-  api.yaml                deployment + service (AWSApi__* env vars)
-  react.yaml              configmap (API_URL) + deployment + service
-  ingress.yaml            /api -> api, / -> react
+  secrets.yaml        template -> rendered by deploy.sh
+  migrations-job.yaml one-shot dbup runner, re-run on upgrades
+  api.yaml            deployment + service (AWSApi__* env vars, ALB healthcheck path)
+  react.yaml          configmap (API_URL) + deployment + service
+  ingress.yaml        ALB ingress: /api -> api, / -> react
   environments/
-    dev.env.example        copy to dev.env: domain, IMAGE_API_URL, API_URL, tags
-    dev.secrets.env.example  copy to dev.secrets.env, fill secrets
+    dev.env.example        copy to dev.env: IMAGE_API_URL, RDS_ENDPOINT, DB_USER, tags
+    dev.secrets.env.example  copy to dev.secrets.env: DB_PASSWORD, IMAGE_API_KEY
   deploy.sh               renders + applies everything in order
 ```
 
 ## Prerequisites
 
-- AWS account + `aws` CLI credentials (or `terraform.tfvars` with `aws_profile`)
-- Terraform >= 1.5
-- kubectl
-- an SSH key (any)
+- AWS account + `aws` CLI credentials (or `terraform.tfvars` with `aws_profile`), plus `kubectl`
+- Terraform >= 1.5 (CI uses a pinned docker image, no local install needed)
 - the three images pushed to ghcr.io: `aws-api`, `aws-react`, `aws-db-migrations` (public, no registry secret needed)
 - the React app reads `API_URL` from an env var at runtime (no per-env builds)
 
 ## Deploy (dev)
 
-1. **Provision AWS** (2 × t3.small, ~$0.04/h; free tier covers a few hours, and it costs nothing once destroyed):
+1. **Provision AWS** (takes ~15-20 min; see "Costs" below):
 
    ```sh
-   cd terraform
-   cp terraform.tfvars.example terraform.tfvars   # adjust if needed
+   cd terraform/environments/dev
+   cp terraform.tfvars.example terraform.tfvars   # set db_master_password
    terraform init
    terraform apply
-   terraform output -raw control_public_ip        # -> $CTRL_IP
    ```
 
-2. **Bootstrap the control node** (installs helm, ingress-nginx, rancher; prints URL + admin token):
+   `db_master_password` in `terraform.tfvars` MUST equal `DB_PASSWORD` in `k8s/environments/dev.secrets.env` (and the `DB_PASSWORD_DEV` GitHub secret for CD).
 
-    ```sh
-    scp ../bootstrap/setup-control-node.sh ec2-user@$CTRL_IP:~/
-    ssh ec2-user@$CTRL_IP 'sudo sh ~/setup-control-node.sh'
-    ```
-
-3. **Configure kubectl** (run from the repo root; Git Bash or WSL):
+2. **Bootstrap the cluster** (kubeconfig + ALB load balancer controller):
 
    ```sh
-   scp ec2-user@$CTRL_IP:/etc/rancher/k3s/k3s.yaml .kubeconfig
-   sed -i -e "s|127.0.0.1|$CTRL_IP|g" .kubeconfig
-   export KUBECONFIG=$PWD/.kubeconfig
-   kubectl get nodes        # 2 nodes = Ready
+   bash bootstrap/setup-eks.sh dev
    ```
 
-4. **Fill env values**:
+3. **Fill env values**:
 
-    ```sh
-    cp k8s/environments/dev.env.example k8s/environments/dev.env
-    #    fill DOMAIN=$CTRL_IP and IMAGE_API_URL=(image API base URL for this env)
-    cp k8s/environments/dev.secrets.env.example k8s/environments/dev.secrets.env
-    #    fill DB_PASSWORD= and IMAGE_API_KEY=
-    ```
+   ```sh
+   cp k8s/environments/dev.env.example k8s/environments/dev.env
+   #    IMAGE_API_URL=<image api host>, RDS_ENDPOINT=(terraform output -raw rds_endpoint),
+   #    DB_USER=(terraform output -raw db_user)
+   cp k8s/environments/dev.secrets.env.example k8s/environments/dev.secrets.env
+   #    fill DB_PASSWORD= (same as terraform.tfvars) and IMAGE_API_KEY=
+   ```
 
-5. **Deploy**:
+4. **Deploy**:
 
    ```sh
    cd k8s
    ./deploy.sh dev
    ```
 
-   The script renders the placeholders, applies namespace → secrets → postgresql → waits → migrations job → api → react → ingress, and waits for readiness.
+   The script renders the placeholders, applies namespace → secrets → migrations job (against RDS) → api → react → ingress, and prints the ALB URL once the controller publishes it on the Ingress status.
 
-6. **Validate**:
+5. **Validate**:
 
    ```sh
-    curl http://$CTRL_IP/api/            # api through ingress (host :80)
-    curl http://$CTRL_IP/                # react through ingress (host :80)
+   curl http://<ALB-DNS>/api/    # api through the ALB
+   curl http://<ALB-DNS>/        # Next.js through the ALB
    ```
-
-    Rancher dashboard: `http://$CTRL_IP:31591` (admin / token printed by step 2; add the cluster with a local kubeconfig import).
 
 ## Deploy a new build (manual CD)
 
-The app repos (`AWS.Api`, `AWS.React`) build and push their ghcr images on their own CI. To deploy the latest build to a cluster you press a button — no tags to edit by hand:
+The app repos (`AWS.Api`, `AWS.React`) build and push their ghcr images on their own CI. To deploy the latest build to an environment you press a button — no tags to edit by hand:
 
 1. GitHub → **Actions** → **Deploy** (`.github/workflows/cd.yml`) → choose `env` → **Run workflow**.
-2. The workflow deploys the `sha7` of the app repos' `main` HEAD (latest code, pinned image) — or a specific `sha7` if you fill the optional `api_tag` / `react_tag` fields (pin or roll back) — renders the env files, and runs `k8s/deploy.sh <env>` against the cluster from the kubeconfig secret.
+2. The workflow assumes the env's OIDC role, resolves the `sha7` of the app repos' `main` HEAD (or a specific `sha7` from the optional `api_tag` / `react_tag` fields, to pin or roll back), resolves the RDS endpoint/user via the aws CLI, renders the env files, and runs `k8s/deploy.sh <env>` against the EKS cluster.
 
 Required per environment (repo settings → Secrets & variables → Actions):
 
-| Type     | Name (dev)        | Value                                                                    |
-| -------- | ----------------- | ------------------------------------------------------------------------ |
-| Secret   | `KUBECONFIG_DEV`  | kubeconfig file content (created in step 3)                              |
-| Secret   | `DB_PASSWORD_DEV` | PostgreSQL password — must match what the cluster was deployed with       |
-| Secret   | `IMAGE_API_KEY_DEV` | image API key for this env                                              |
-| Variable | `DOMAIN_DEV`      | cluster node public IP (or domain)                                        |
-| Variable | `IMAGE_API_URL_DEV` | image API base URL for this env (e.g. the dev image-api host)           |
+| Type   | Name                  | Value                                                        |
+| ------ | --------------------- | ------------------------------------------------------------ |
+| Secret | `AWS_ROLE_ARN_DEV`    | `terraform output -raw ci_role_arn`                          |
+| Secret | `DB_PASSWORD_DEV`     | RDS master password (must match `db_master_password` in tfvars) |
+| Secret | `IMAGE_API_KEY_DEV`   | image API key for this env                                    |
+| Var    | `IMAGE_API_URL_DEV`   | image API base URL for this env (e.g. the dev image-api host) |
 
-If you rebuild the cluster (terraform destroy/apply), regenerate `dev.secrets.env`, redeploy, and update `DB_PASSWORD_DEV`/`KUBECONFIG_DEV` again.
+No kubeconfig secret: kubectl uses `aws eks get-token` against the OIDC role.
 
 ## Run CI locally
 
@@ -148,16 +135,31 @@ Push to an app repo's `main` (its CI pushes the `sha7` + `latest` ghcr images), 
 # optional: clean cluster first
 kubectl -n app delete job migrations
 kubectl delete ns app
-cd terraform && terraform destroy
+cd terraform/environments/dev && terraform destroy
 ```
 
-`terraform destroy` removes only what this config created (EC2, EBS, VPC, SGs). Verify: `aws ec2 describe-instances --filters "tag:Project=aws-deployment"` returns none.
+`terraform destroy` removes everything this config created (EKS, RDS, VPC, NAT, IAM). Nothing persists: the RDS snapshot is skipped and the dev DB is disposable (the migrations job rebuilds the schema on next deploy). Verify: `aws ec2 describe-instances --filters "tag:Project=aws-deployment"` and `aws eks list-clusters` return nothing for this project.
+
+Re-deploying later is: `terraform apply` → `bootstrap/setup-eks.sh` → `k8s/deploy.sh`.
+
+## Costs (us-east-1, approx)
+
+| Resource                        | ~$/mo   | Notes                                        |
+| ------------------------------- | ------- | -------------------------------------------- |
+| EKS control plane               | 73      | fixed, as long as the cluster exists         |
+| 3 x t3.medium workers (2 vCPU)  | ~90     | smallest EKS-supported type; 1 node = ~$30   |
+| RDS db.t4g.micro Multi-AZ       | ~40     | single-AZ halves it                          |
+| ALB                             | ~18-25  | + data transfer ~$0.09/GB                    |
+| NAT gateway (1)                 | ~32     | + data ~$0.045/GB                            |
+| 3 x 20GB gp3 node volumes       | ~5      |                                              |
+| **Total (HA profile)**          | **~260**| 1-node / single-AZ-DB profile: ~$160         |
+
+Cost knobs (`terraform/environments/dev/variables.tf`): `worker_desired_size`/`worker_min_size` (3 = one node per AZ), `worker_instance_types`, `db_instance_class`, `db_multi_az`.
 
 ## Known limitations (by design, for this phase)
 
-- Ingress-nginx runs `hostNetwork` (no load balancer): each node's host `:80`/`:443` is owned by the ingress controller, so nothing else may bind those ports on the nodes. Pod-level load balancing is still done by k8s (Services).
-
-- Plain HTTP (no TLS) — no domain/cert yet; the ingress controller already owns node `:443`, TLS is a later step.
-- `ssh_allowed_cidrs` / `app_allowed_cidrs` default to `0.0.0.0/0` — lock down before leaving dev.
-- Single-AZ, no HA (one control node). Fine for validation; bump `worker_instance_count` / add nodes later.
-- PostgreSQL is a single-node StatefulSet on `local-path` storage (fits in the 20GB root EBS). Swap for a managed PG or RWO EBS PVC before prod.
+- Plain HTTP, no domain/cert: the ALB listens on :80 only. When a domain exists, add an ACM cert + `listen-ports` HTTPS + a redirect (Ingress annotations).
+- Single NAT gateway in one AZ (cheapest): an AZ outage affects new image pulls, not running pods. Add one NAT per AZ for full HA.
+- The app connects to RDS as the master user (dev). Create a dedicated app user (and IAM auth) before prod.
+- Local Terraform state in the repo dir. Move to an S3 backend + DynamoDB lock before CI/CD runs `terraform apply` against prod.
+- `worker_min_size` defaults to 1: set it to 3 (one per AZ) when the app needs real HA.

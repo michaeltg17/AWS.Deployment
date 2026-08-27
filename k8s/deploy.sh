@@ -4,10 +4,11 @@
 #   ./deploy.sh dev
 #
 # Reads:
-#   environments/<env>.env             (DOMAIN, IMAGE_API_URL, API_URL, image tags)
+#   environments/<env>.env             (API_URL, IMAGE_API_URL, RDS_ENDPOINT, DB_USER, image tags)
 #   environments/<env>.secrets.env    (DB_PASSWORD, IMAGE_API_KEY - NOT committed)
 #
-# Requires: kubectl with context = the k3s cluster, helm (for bootstrap only).
+# Requires: kubectl pointed at the EKS cluster (aws eks update-kubeconfig).
+# The database is RDS (created by terraform) - there is no in-cluster PG.
 
 set -euo pipefail
 
@@ -24,9 +25,10 @@ source "$ENV_FILE"
 # shellcheck disable=SC1090
 source "$SECRETS_FILE"
 
-: "${DOMAIN:?set DOMAIN (node public IP or domain) in $ENV_FILE}"
 : "${API_URL:?set API_URL in $ENV_FILE}"
 : "${IMAGE_API_URL:?set IMAGE_API_URL in $ENV_FILE}"
+: "${RDS_ENDPOINT:?set RDS_ENDPOINT in $ENV_FILE (terraform output -raw rds_endpoint)}"
+: "${DB_USER:?set DB_USER in $ENV_FILE (terraform output -raw db_user)}"
 : "${API_IMAGE_TAG:?set API_IMAGE_TAG in $ENV_FILE}"
 : "${REACT_IMAGE_TAG:?set REACT_IMAGE_TAG in $ENV_FILE}"
 : "${MIGRATIONS_IMAGE_TAG:?set MIGRATIONS_IMAGE_TAG in $ENV_FILE}"
@@ -40,9 +42,10 @@ render() {
   local f
   for f in "$@"; do
     sed \
-      -e "s|__DOMAIN__|${DOMAIN}|g" \
       -e "s|__API_URL__|${API_URL}|g" \
       -e "s|__IMAGE_API_URL__|${IMAGE_API_URL}|g" \
+      -e "s|__RDS_ENDPOINT__|${RDS_ENDPOINT}|g" \
+      -e "s|__DB_USER__|${DB_USER}|g" \
       -e "s|__API_IMAGE_TAG__|${API_IMAGE_TAG}|g" \
       -e "s|__REACT_IMAGE_TAG__|${REACT_IMAGE_TAG}|g" \
       -e "s|__MIGRATIONS_IMAGE_TAG__|${MIGRATIONS_IMAGE_TAG}|g" \
@@ -53,18 +56,14 @@ render() {
 }
 
 apply() {
-  kubectl apply -f "$TMP/$1"
+  # --validate=false: server-side OpenAPI validation can transiently fail to
+  # download the schema from the EKS API server; manifests are already checked
+  # by kubeconform in CI, so skip the redundant server-side validation.
+  kubectl apply --validate=false -f "$TMP/$1"
   echo "  applied $1"
 }
 
 render "$K8S_DIR"/*.yaml
-
-# K8s >= 1.33 rejects IP addresses in ingress host (must be a DNS name).
-# IP-based envs (dev) fall back to a catch-all rule by dropping the host.
-if [[ "$DOMAIN" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  # keep the YAML list item, drop only the host value
-  sed -i 's|^[[:space:]]*- host:.*$|    -|' "$TMP/ingress.yaml"
-fi
 
 echo "==> namespace"
 apply namespace.yaml
@@ -72,11 +71,7 @@ apply namespace.yaml
 echo "==> secrets"
 apply secrets.yaml
 
-echo "==> postgresql"
-apply postgresql.yaml
-kubectl -n app wait --for=condition=ready pod -l app=postgresql --timeout=180s
-
-echo "==> migrations"
+echo "==> migrations (runs against RDS at ${RDS_ENDPOINT})"
 apply migrations-job.yaml
 if ! kubectl -n app wait --for=condition=complete job/migrations --timeout=300s; then
   echo "ERROR: migrations job failed. Last logs:"
@@ -92,16 +87,23 @@ echo "==> react"
 apply react.yaml
 kubectl -n app wait --for=condition=ready pod -l app=react --timeout=180s || true
 
-echo "==> ingress"
+echo "==> ingress (the ALB controller creates the public ALB from this)"
 apply ingress.yaml
+
+# The controller publishes the ALB DNS name on the Ingress status.
+ALB_DNS=""
+for _ in $(seq 1 30); do
+  ALB_DNS="$(kubectl -n app get ingress app -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)"
+  [ -n "$ALB_DNS" ] && break
+  sleep 6
+done
 
 echo ""
 echo "============================================================"
-  echo "  App:      http://${DOMAIN}/"
-  echo "  API:      http://${DOMAIN}/api/  (via ingress)"
-  echo "  Rancher:  http://<control-ip>:31591"
+echo "  App:      http://${ALB_DNS:-<ALB DNS not published yet>}/"
+echo "  API:      http://${ALB_DNS:-<ALB DNS not published yet>}/api/  (via ALB)"
 echo "============================================================"
 echo ""
 echo "Quick check:"
-  echo "  curl -s http://${DOMAIN}/api/ | head"
+echo "  curl -s http://${ALB_DNS}/api/ | head"
 echo "  kubectl -n app get pods,svc,ingress"
