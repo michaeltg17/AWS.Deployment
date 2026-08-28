@@ -45,13 +45,13 @@ Deploy a small full-stack app — **API + Next.js + PostgreSQL** — onto **AWS*
  ┌────────────────────────────── AWS VPC ──────────────────────────────┐
  │                                                                     │
  │   AZ-a                    AZ-b                    AZ-c              │
- │ ┌─────────────┐         ┌─────────────┐         ┌─────────────┐    │
- │ │ EKS Private │         │ EKS Private │         │ EKS Private │    │
- │ │   Subnet    │         │   Subnet    │         │   Subnet    │    │
- │ │             │         │             │         │             │    │
- │ │ EKS Nodes   │         │ EKS Nodes   │         │ EKS Nodes   │    │
- │ │ API / Next  │         │ API / Next  │         │ API / Next  │    │
- │ └─────────────┘         └─────────────┘         └─────────────┘    │
+ │ ┌─────────────┐         ┌─────────────┐         ┌─────────────┐     │
+ │ │ EKS Private │         │ EKS Private │         │ EKS Private │     │
+ │ │   Subnet    │         │   Subnet    │         │   Subnet    │     │
+ │ │             │         │             │         │             │     │
+ │ │ EKS Nodes   │         │ EKS Nodes   │         │ EKS Nodes   │     │
+ │ │ API / Next  │         │ API / Next  │         │ API / Next  │     │
+ │ └─────────────┘         └─────────────┘         └─────────────┘     │
  │                                                                     │
  │                    ┌────────────────────────┐                       │
  │                    │   RDS Private Subnets  │                       │
@@ -59,6 +59,7 @@ Deploy a small full-stack app — **API + Next.js + PostgreSQL** — onto **AWS*
  │                    │ PostgreSQL Multi-AZ    │                       │
  │                    └────────────────────────┘                       │
  │                                                                     │
+ └─────────────────────────────────────────────────────────────────────┘
 
 ```
 
