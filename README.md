@@ -3,23 +3,63 @@
 Deploy a small full-stack app — **API + Next.js + PostgreSQL** — onto **AWS**, managed end to end with **Terraform** (infrastructure) and **Kubernetes manifests** (workloads). No domain in dev: the app is served plain-HTTP on the ALB's DNS name.
 
 ```
-                 Internet
-                    |
-       ALB :80 (internet-facing, HTTP)
-       created by the AWS Load Balancer
-       Controller from k8s/ingress.yaml
-                    |
-             EKS Ingress
-             /api/*  ->  API service
-             /       ->  Next.js service
-                    |
-  EKS node group (private subnets, 3 AZs, no public IPs)
-  +------------------+     +------------------+
-  | Next.js pods     |     | API pods         |
-  +------------------+     +------------------+
-                                   |
-                          RDS PostgreSQL
-                          (Multi-AZ, private)
+                              INTERNET
+                                  │
+                                  │ HTTP :80
+                                  ▼
+                    ┌──────────────────────────┐
+                    │      AWS ALB             │
+                    │  Internet-facing         │
+                    │  Managed by AWS LB       │
+                    │  Controller              │
+                    └────────────┬─────────────┘
+                                 │
+                         ┌───────▼────────┐
+                         │  EKS Ingress   │
+                         │  ingress.yaml  │
+                         └───────┬────────┘
+                                 │
+                    ┌────────────┴────────────┐
+                    │                         │
+              /api/* │                         │ /
+                    ▼                         ▼
+          ┌────────────────┐        ┌────────────────┐
+          │  API Service   │        │ Next.js Service│
+          └───────┬────────┘        └───────┬────────┘
+                  │                         │
+                  ▼                         ▼
+          ┌────────────────┐        ┌────────────────┐
+          │    API Pods    │        │  Next.js Pods  │
+          │   Deployment   │        │   Deployment   │
+          └───────┬────────┘        └────────────────┘
+                  │
+                  │ PostgreSQL :5432
+                  ▼
+          ┌──────────────────────────────┐
+          │       RDS PostgreSQL         │
+          │          Multi-AZ            │
+          │          Private             │
+          └──────────────────────────────┘
+
+
+ ┌────────────────────────────── AWS VPC ──────────────────────────────┐
+ │                                                                     │
+ │   AZ-a                    AZ-b                    AZ-c              │
+ │ ┌─────────────┐         ┌─────────────┐         ┌─────────────┐    │
+ │ │ EKS Private │         │ EKS Private │         │ EKS Private │    │
+ │ │   Subnet    │         │   Subnet    │         │   Subnet    │    │
+ │ │             │         │             │         │             │    │
+ │ │ EKS Nodes   │         │ EKS Nodes   │         │ EKS Nodes   │    │
+ │ │ API / Next  │         │ API / Next  │         │ API / Next  │    │
+ │ └─────────────┘         └─────────────┘         └─────────────┘    │
+ │                                                                     │
+ │                    ┌────────────────────────┐                       │
+ │                    │   RDS Private Subnets  │                       │
+ │                    │                        │                       │
+ │                    │ PostgreSQL Multi-AZ    │                       │
+ │                    └────────────────────────┘                       │
+ │                                                                     │
+
 ```
 
 **Terraform owns the infrastructure** (VPC, subnets, NAT, EKS cluster + node group, RDS, IAM incl. the load-balancer-controller role and the GitHub OIDC role). **Kubernetes owns the workloads** (deployments, services, ingress, config, secrets, migrations job). The ALB is an AWS resource but it is created and managed by the controller in-cluster from the Ingress, so route changes are just manifest changes.
