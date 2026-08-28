@@ -73,13 +73,16 @@ Deployment of the template project in **AWS**, managed end to end with **Terrafo
 
 ```
 terraform/
+  bootstrap/          the remote state itself: S3 bucket (state + lockfile of
+                      all envs), versioning, public access block, SSE
   modules/
     vpc/              VPC, 3 public + 3 private subnets, IGW, 1 NAT
     eks/              cluster, node group, addons, SGs, aws-auth,
                       ALB-controller IRSA role, GitHub OIDC role
     rds/              PostgreSQL instance, subnet group, SG
   environments/
-    dev/              module wiring + per-env values (tfvars, gitignored)
+    dev/              module wiring + per-env values (tfvars, gitignored),
+                      state in S3 at dev/terraform.tfstate
 bootstrap/
   setup-eks.sh        kubeconfig + wait nodes + helm install ALB controller
 k8s/
@@ -120,7 +123,19 @@ Builds the `template-deployment-ci` tools image once (terraform, shellcheck, pyt
 
 ## Deploy (dev)
 
-1. **Provision AWS** (takes ~15-20 min):
+1. **Bootstrap the remote state** (one-time, only on a fresh account):
+
+   ```sh
+   aws s3api create-bucket --bucket michaeltg17-template-terraform-state --region us-east-1
+   cd terraform/bootstrap
+   terraform init
+   terraform import aws_s3_bucket.state michaeltg17-template-terraform-state
+   terraform apply
+   ```
+
+   Terraform can't store state in a bucket that doesn't exist yet, so the bucket is created with the one CLI command above and `terraform import` adopts it; from then on Terraform manages everything (versioning, public access block, encryption). All environments keep their state under their own key in this bucket (`dev/terraform.tfstate`, `qa/...`, `prod/...`); locking is S3-native (`use_lockfile`, a `<key>.tflock` object), no DynamoDB.
+
+2. **Provision AWS** (takes ~15-20 min):
 
    ```sh
    cd terraform/environments/dev
@@ -131,13 +146,13 @@ Builds the `template-deployment-ci` tools image once (terraform, shellcheck, pyt
 
    `db_master_password` in `terraform.tfvars` MUST equal `DB_PASSWORD` in `k8s/environments/dev.secrets.env` (and the `DB_PASSWORD_DEV` GitHub secret for CD).
 
-2. **Bootstrap the cluster** (kubeconfig + ALB load balancer controller):
+3. **Bootstrap the cluster** (kubeconfig + ALB load balancer controller):
 
    ```sh
    bash bootstrap/setup-eks.sh dev
    ```
 
-3. **Fill env values**:
+4. **Fill env values**:
 
    ```sh
    cp k8s/environments/dev.env.example k8s/environments/dev.env
@@ -147,7 +162,7 @@ Builds the `template-deployment-ci` tools image once (terraform, shellcheck, pyt
    #    fill DB_PASSWORD= (same as terraform.tfvars) and IMAGE_API_KEY=
    ```
 
-4. **Deploy**:
+5. **Deploy**:
 
    ```sh
    cd k8s
@@ -156,7 +171,7 @@ Builds the `template-deployment-ci` tools image once (terraform, shellcheck, pyt
 
    The script renders the placeholders, applies namespace → secrets → migrations job (against RDS) → api → react → ingress, and prints the ALB URL once the controller publishes it on the Ingress status.
 
-5. **Validate**:
+6. **Validate**:
 
    ```sh
    curl http://<ALB-DNS>/api/    # api through the ALB
@@ -204,6 +219,8 @@ cd terraform/environments/dev && terraform destroy
 
 `terraform destroy` removes everything this config created (EKS, RDS, VPC, NAT, IAM). Nothing persists: the RDS snapshot is skipped and the dev DB is disposable (the migrations job rebuilds the schema on next deploy). Verify: `aws ec2 describe-instances --filters "tag:Project=template"` and `aws eks list-clusters` return nothing for this project.
 
+The remote state itself (the S3 bucket from `terraform/bootstrap`) is **not** touched by `teardown.sh`: it outlives the environment so state history (versioned) is kept, and so a re-deploy goes straight to `terraform apply`.
+
 Re-deploying later is: `terraform apply` → `bootstrap/setup-eks.sh` → `k8s/deploy.sh`.
 
 ## Known limitations (by design, for this phase)
@@ -212,5 +229,5 @@ Re-deploying later is: `terraform apply` → `bootstrap/setup-eks.sh` → `k8s/d
 - Single NAT gateway in one AZ (cheapest): an AZ outage affects new image pulls, not running pods. Add one NAT per AZ for full HA.
 - The app connects to RDS as the master user (dev). Create a dedicated app user (and IAM auth) before prod.
 - The RDS connection uses `SSL Mode=Require` with `Trust Server Certificate=true`: traffic is encrypted but the RDS CA is not pinned, so the server's identity is not verified (a MITM could present a fake cert). For prod, pin the RDS CA certificate and use `SSL Mode=Verify-Full`.
-- Local Terraform state in the repo dir. Move to an S3 backend + DynamoDB lock before CI/CD runs `terraform apply` against prod.
+- CI/CD never runs `terraform` (only `k8s/deploy.sh`). If that changes (e.g. a pipeline applies prod), the pipeline role needs S3 access to the env's state key + lockfile in `michaeltg17-template-terraform-state` (see the [S3 backend docs](https://developer.hashicorp.com/terraform/language/backend/s3#permissions-required) for the exact statements).
 - `worker_min_size` defaults to 1: set it to 3 (one per AZ) when the app needs real HA.
