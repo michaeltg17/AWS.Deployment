@@ -35,7 +35,7 @@ spec:
                 topologyKey: kubernetes.io/hostname
       containers:
         - name: react
-          image: ghcr.io/michaeltg17/aws-react:__REACT_IMAGE_TAG__
+          image: ghcr.io/michaeltg17/template-react:__REACT_IMAGE_TAG__
           imagePullPolicy: IfNotPresent
           ports:
             - name: http

@@ -7,7 +7,7 @@ set -euo pipefail
 # to C:/Program Files/Git/app. No-op on Linux/CI.
 export MSYS_NO_PATHCONV=1
 
-IMAGE="aws-deployment-ci"
+IMAGE="template-deployment-ci"
 
 echo "Building CI image..."
 docker build -f Dockerfile.ci -t "$IMAGE" .

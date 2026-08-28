@@ -30,7 +30,7 @@ spec:
               done
       containers:
         - name: migrations
-          image: ghcr.io/michaeltg17/aws-db-migrations:__MIGRATIONS_IMAGE_TAG__
+          image: ghcr.io/michaeltg17/template-db-migrations:__MIGRATIONS_IMAGE_TAG__
           imagePullPolicy: IfNotPresent
           env:
             - name: POSTGRESQL_CONNECTION_STRING

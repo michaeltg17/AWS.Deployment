@@ -3,4 +3,4 @@ kind: Namespace
 metadata:
   name: app
   labels:
-    app.kubernetes.io/part-of: aws-deployment
+    app.kubernetes.io/part-of: template
