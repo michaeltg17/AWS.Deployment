@@ -1,5 +1,16 @@
 # AGENTS.md
 
+## Context
+
+- `ARCH.md` documents the full architecture and workflows (Terraform + EKS +
+  ALB controller + k8s deploy/CD + teardown). Read it for context before
+  working on deployment, teardown, CI/CD, or anything that crosses the
+  Terraform / k8s / AWS boundary.
+- The ALB is created by the AWS Load Balancer Controller from
+  `k8s/ingress.yaml` - it is not in the Terraform state. Teardown must go
+  through `bootstrap/teardown.sh` (k8s cleanup before `terraform destroy`),
+  never a bare `terraform destroy`.
+
 ## Branching model
 
 - **All work happens on the `dev` branch.** Commit directly to `dev`; do **not** create feature/topic branches that open a PR straight to `main`.

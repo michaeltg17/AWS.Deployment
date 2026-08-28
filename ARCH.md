@@ -187,9 +187,18 @@ No kubeconfig secret: kubectl authenticates through the OIDC role (`aws eks upda
 ## Destroy everything (after validation)
 
 ```sh
-# optional: clean cluster first
-kubectl -n app delete job migrations
-kubectl delete ns app
+bash bootstrap/teardown.sh dev
+```
+
+The script does the k8s-side cleanup **before** `terraform destroy`: it deletes the `app` namespace (the Ingress finalizer makes the ALB controller delete the public ALB), waits for the ALB and its ENIs/EIPs to leave AWS, removes the controller's `k8s-*` security groups, uninstalls the controller, runs `terraform destroy`, and verifies nothing is left.
+
+**Do not run `terraform destroy` directly** while the cluster is up: the ALB is controller-created and not in the Terraform state, so destroying the cluster first orphans the ALB, whose ENIs/EIPs then block the public subnets, the internet gateway and the VPC (the script's self-healing path recovers from exactly that, but the VPC/subnets stay broken until the orphan is removed).
+
+If the script is unavailable, the manual equivalent (cluster still up):
+
+```sh
+kubectl delete ns app          # wait for it to disappear (Ingress finalized -> ALB deleted)
+aws elbv2 describe-load-balancers   # wait until the k8s-app-app-* ALB is gone
 cd terraform/environments/dev && terraform destroy
 ```
 
