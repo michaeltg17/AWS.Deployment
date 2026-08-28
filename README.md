@@ -5,16 +5,21 @@ Deploy a small full-stack app — **API + Next.js + PostgreSQL** — onto **AWS*
 ```
                  Internet
                     |
-           ALB :80 (internet-facing, created by the
-           AWS Load Balancer Controller from k8s/ingress.yaml)
+       ALB :80 (internet-facing, HTTP)
+       created by the AWS Load Balancer
+       Controller from k8s/ingress.yaml
                     |
-             EKS Ingress  /api/*  ->  API service
-                        /        ->  Next.js service
+             EKS Ingress
+             /api/*  ->  API service
+             /       ->  Next.js service
                     |
-        EKS private subnets (3 AZs, no public IPs)
-        Next.js pod x N     API pod x N
-                                 |
-                        RDS PostgreSQL (Multi-AZ, private)
+  EKS node group (private subnets, 3 AZs, no public IPs)
+  +------------------+     +------------------+
+  | Next.js pods     |     | API pods         |
+  +------------------+     +------------------+
+                                   |
+                          RDS PostgreSQL
+                          (Multi-AZ, private)
 ```
 
 **Terraform owns the infrastructure** (VPC, subnets, NAT, EKS cluster + node group, RDS, IAM incl. the load-balancer-controller role and the GitHub OIDC role). **Kubernetes owns the workloads** (deployments, services, ingress, config, secrets, migrations job). The ALB is an AWS resource but it is created and managed by the controller in-cluster from the Ingress, so route changes are just manifest changes.
@@ -108,7 +113,7 @@ Required per environment (repo settings → Secrets & variables → Actions):
 
 | Type   | Name                  | Value                                                        |
 | ------ | --------------------- | ------------------------------------------------------------ |
-| Secret | `AWS_ROLE_ARN_DEV`    | `terraform output -raw ci_role_arn`                          |
+| Secret | `AWS_ROLE_ARN_DEV`    | `terraform output -raw cd_role_arn`                          |
 | Secret | `DB_PASSWORD_DEV`     | RDS master password (must match `db_master_password` in tfvars) |
 | Secret | `IMAGE_API_KEY_DEV`   | image API key for this env                                    |
 | Var    | `IMAGE_API_URL_DEV`   | image API base URL for this env (e.g. the dev image-api host) |
@@ -161,5 +166,6 @@ Cost knobs (`terraform/environments/dev/variables.tf`): `worker_desired_size`/`w
 - Plain HTTP, no domain/cert: the ALB listens on :80 only. When a domain exists, add an ACM cert + `listen-ports` HTTPS + a redirect (Ingress annotations).
 - Single NAT gateway in one AZ (cheapest): an AZ outage affects new image pulls, not running pods. Add one NAT per AZ for full HA.
 - The app connects to RDS as the master user (dev). Create a dedicated app user (and IAM auth) before prod.
+- The RDS connection uses `SSL Mode=Require` with `Trust Server Certificate=true`: traffic is encrypted but the RDS CA is not pinned, so the server's identity is not verified (a MITM could present a fake cert). For prod, pin the RDS CA certificate and use `SSL Mode=Verify-Full`.
 - Local Terraform state in the repo dir. Move to an S3 backend + DynamoDB lock before CI/CD runs `terraform apply` against prod.
 - `worker_min_size` defaults to 1: set it to 3 (one per AZ) when the app needs real HA.

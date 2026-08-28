@@ -30,8 +30,7 @@ variable "max_allocated_storage_gb" {
 variable "db_name" {
   description = "Initial database name"
   type        = string
-  # "Database" is a reserved word in PostgreSQL 18+
-  default = "appdb"
+  default     = "template_db"
 }
 
 variable "master_username" {

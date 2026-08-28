@@ -6,7 +6,7 @@
 # Trigger: Actions tab -> "Deploy" -> choose env (optionally pin tags) -> Run.
 #
 # Auth: the workflow assumes the per-env GitHub OIDC role created by
-# terraform (`terraform output -raw ci_role_arn`). No stored kubeconfig:
+# terraform (`terraform output -raw cd_role_arn`). No stored kubeconfig:
 # kubectl talks to EKS via `aws eks get-token`.
 #
 # Resource names are derived from the env: cluster aws-deployment-<env>,
@@ -14,7 +14,7 @@
 # runtime with the aws CLI, so nothing goes stale).
 #
 # Required per env (repo settings):
-#   secrets: AWS_ROLE_ARN_<ENV>   (from `terraform output -raw ci_role_arn`)
+#   secrets: AWS_ROLE_ARN_<ENV>   (from `terraform output -raw cd_role_arn`)
 #            DB_PASSWORD_<ENV>    (must match the RDS password in tfvars)
 #            IMAGE_API_KEY_<ENV>
 #   vars:    IMAGE_API_URL_<ENV>  (image API base URL for that env)
