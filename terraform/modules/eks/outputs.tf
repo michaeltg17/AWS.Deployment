@@ -38,9 +38,9 @@ output "node_role_arn" {
   value       = aws_iam_role.node.arn
 }
 
-output "ci_role_arn" {
-  description = "GitHub Actions OIDC role ARN (set as AWS_ROLE_ARN_<env> repo secret)"
-  value       = aws_iam_role.ci.arn
+output "cd_role_arn" {
+  description = "GitHub Actions OIDC role ARN for the CD (deploy) workflow (set as AWS_ROLE_ARN_<env> repo secret)"
+  value       = aws_iam_role.cd.arn
 }
 
 output "alb_controller_role_arn" {

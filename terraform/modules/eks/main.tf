@@ -254,7 +254,7 @@ resource "aws_iam_openid_connect_provider" "github" {
   tags = local.tags
 }
 
-data "aws_iam_policy_document" "ci_assume" {
+data "aws_iam_policy_document" "cd_assume" {
   statement {
     effect  = "Allow"
     actions = ["sts:AssumeRoleWithWebIdentity"]
@@ -278,14 +278,14 @@ data "aws_iam_policy_document" "ci_assume" {
   }
 }
 
-resource "aws_iam_role" "ci" {
-  name_prefix        = "${var.name}-ci-"
-  assume_role_policy = data.aws_iam_policy_document.ci_assume.json
+resource "aws_iam_role" "cd" {
+  name_prefix        = "${var.name}-cd-"
+  assume_role_policy = data.aws_iam_policy_document.cd_assume.json
 
   tags = local.tags
 }
 
-data "aws_iam_policy_document" "ci" {
+data "aws_iam_policy_document" "cd" {
   statement {
     effect = "Allow"
     actions = [
@@ -319,9 +319,9 @@ data "aws_iam_policy_document" "ci" {
   }
 }
 
-resource "aws_iam_role_policy" "ci" {
-  role   = aws_iam_role.ci.id
-  policy = data.aws_iam_policy_document.ci.json
+resource "aws_iam_role_policy" "cd" {
+  role   = aws_iam_role.cd.id
+  policy = data.aws_iam_policy_document.cd.json
 }
 
 # ----- load balancer controller (IRSA) -----

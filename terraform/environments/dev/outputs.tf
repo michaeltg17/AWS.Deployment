@@ -28,9 +28,9 @@ output "db_user" {
   value       = module.rds.username
 }
 
-output "ci_role_arn" {
-  description = "GitHub Actions role ARN (set as AWS_ROLE_ARN_<ENV> repo secret)"
-  value       = module.eks.ci_role_arn
+output "cd_role_arn" {
+  description = "GitHub Actions role ARN for the CD (deploy) workflow (set as AWS_ROLE_ARN_<ENV> repo secret)"
+  value       = module.eks.cd_role_arn
 }
 
 output "alb_controller_role_arn" {
