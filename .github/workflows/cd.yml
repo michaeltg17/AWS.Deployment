@@ -1,4 +1,4 @@
-# Manual continuous deployment: deploys the app repos' (AWS.Api, AWS.React)
+# Manual continuous deployment: deploys the app repos' (Template.Api, Template.React)
 # image tags to an EKS environment. The app repos build and push ghcr images
 # themselves (tagged <sha7> + latest); this workflow picks the sha7 of the
 # app repos' main HEAD (or an explicit override) and runs k8s/deploy.sh.
@@ -10,8 +10,8 @@
 # kubectl talks to EKS via `aws eks update-kubeconfig` (its exec creds
 # call `aws eks get-token` per request).
 #
-# Resource names are derived from the env: cluster aws-deployment-<env>,
-# RDS instance aws-deployment-<env>-db (the endpoint/user are resolved at
+# Resource names are derived from the env: cluster template-<env>,
+# RDS instance template-<env>-db (the endpoint/user are resolved at
 # runtime with the aws CLI, so nothing goes stale).
 #
 # Required per env (repo settings):
@@ -51,8 +51,8 @@ jobs:
       id-token: write
     env:
       ENV_NAME: ${{ github.event.inputs.env }}
-      CLUSTER_NAME: aws-deployment-${{ github.event.inputs.env }}
-      RDS_IDENTIFIER: aws-deployment-${{ github.event.inputs.env }}-db
+      CLUSTER_NAME: template-${{ github.event.inputs.env }}
+      RDS_IDENTIFIER: template-${{ github.event.inputs.env }}-db
       IMAGE_API_URL: ${{ vars['IMAGE_API_URL_' + github.event.inputs.env] }}
       DB_PASSWORD: ${{ secrets['DB_PASSWORD_' + github.event.inputs.env] }}
       IMAGE_API_KEY: ${{ secrets['IMAGE_API_KEY_' + github.event.inputs.env] }}
@@ -74,8 +74,8 @@ jobs:
           API_TAG_OVERRIDE: ${{ github.event.inputs.api_tag }}
           REACT_TAG_OVERRIDE: ${{ github.event.inputs.react_tag }}
         run: |
-          api_tag="${API_TAG_OVERRIDE:-$(git ls-remote https://github.com/michaeltg17/AWS.Api.git refs/heads/main | awk '{print substr($1,1,7)}')}"
-          react_tag="${REACT_TAG_OVERRIDE:-$(git ls-remote https://github.com/michaeltg17/AWS.React.git refs/heads/main | awk '{print substr($1,1,7)}')}"
+          api_tag="${API_TAG_OVERRIDE:-$(git ls-remote https://github.com/michaeltg17/Template.Api.git refs/heads/main | awk '{print substr($1,1,7)}')}"
+          react_tag="${REACT_TAG_OVERRIDE:-$(git ls-remote https://github.com/michaeltg17/Template.React.git refs/heads/main | awk '{print substr($1,1,7)}')}"
           [ -n "$api_tag" ] || { echo "ERROR: could not resolve an api image tag"; exit 1; }
           [ -n "$react_tag" ] || { echo "ERROR: could not resolve a react image tag"; exit 1; }
           echo "Deploying api=$api_tag react=$react_tag to $ENV_NAME"

@@ -38,7 +38,7 @@ spec:
               done
       containers:
         - name: api
-          image: ghcr.io/michaeltg17/aws-api:__API_IMAGE_TAG__
+          image: ghcr.io/michaeltg17/template-api:__API_IMAGE_TAG__
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -46,14 +46,14 @@ spec:
           env:
             - name: ASPNETCORE_ENVIRONMENT
               value: "Production"
-            - name: AWSApi__PostgreSqlConnectionString
+            - name: TemplateApi__PostgreSqlConnectionString
               valueFrom:
                 secretKeyRef:
                   name: api-config
                   key: postgresql-connection-string
-            - name: AWSApi__ImageApiUrl
+            - name: TemplateApi__ImageApiUrl
               value: "__IMAGE_API_URL__"
-            - name: AWSApi__ImageApiKey
+            - name: TemplateApi__ImageApiKey
               valueFrom:
                 secretKeyRef:
                   name: app-secrets

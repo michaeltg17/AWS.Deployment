@@ -1,7 +1,7 @@
 variable "project_name" {
   description = "Resource name prefix and Project tag (AWS resource-group equivalent)"
   type        = string
-  default     = "aws-deployment"
+  default     = "template"
 }
 
 variable "environment" {

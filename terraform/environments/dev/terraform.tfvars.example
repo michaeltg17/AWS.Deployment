@@ -3,7 +3,7 @@
 
 # aws_region  = "us-east-1"
 # aws_profile = ""
-# project_name = "aws-deployment"
+# project_name = "template"
 # environment  = "dev"
 
 # RDS master password - MUST equal DB_PASSWORD in k8s/environments/dev.secrets.env

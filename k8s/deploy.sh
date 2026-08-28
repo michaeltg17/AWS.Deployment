@@ -20,10 +20,12 @@ SECRETS_FILE="$K8S_DIR/environments/$ENV_NAME.secrets.env"
 [ -f "$ENV_FILE" ] || { echo "ERROR: missing $ENV_FILE (copy $ENV_NAME.env.example to $ENV_FILE and fill in values)"; exit 1; }
 [ -f "$SECRETS_FILE" ] || { echo "ERROR: missing $SECRETS_FILE (copy .secrets.env.example and fill in values)"; exit 1; }
 
+# Strip \r so CRLF (Windows) env files cannot smuggle a carriage return into
+# a value, which would corrupt the rendered YAML.
 # shellcheck disable=SC1090
-source "$ENV_FILE"
+source <(tr -d '\r' < "$ENV_FILE")
 # shellcheck disable=SC1090
-source "$SECRETS_FILE"
+source <(tr -d '\r' < "$SECRETS_FILE")
 
 : "${API_URL:?set API_URL in $ENV_FILE}"
 : "${IMAGE_API_URL:?set IMAGE_API_URL in $ENV_FILE}"

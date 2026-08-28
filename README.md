@@ -30,7 +30,6 @@ Deploy a small full-stack app — **API + Next.js + PostgreSQL** — onto **AWS*
                   ▼                         ▼
           ┌────────────────┐        ┌────────────────┐
           │    API Pods    │        │  Next.js Pods  │
-          │   Deployment   │        │   Deployment   │
           └───────┬────────┘        └────────────────┘
                   │
                   │ PostgreSQL :5432
@@ -87,7 +86,7 @@ k8s/
   namespace.yaml
   secrets.yaml        template -> rendered by deploy.sh
   migrations-job.yaml one-shot dbup runner, re-run on upgrades
-  api.yaml            deployment + service (AWSApi__* env vars, ALB healthcheck path)
+  api.yaml            deployment + service (TemplateApi__* env vars, ALB healthcheck path)
   react.yaml          configmap (API_URL) + deployment + service
   ingress.yaml        ALB ingress: /api -> api, / -> react
   environments/
@@ -110,13 +109,13 @@ The same checks that run in GitHub Actions also run in a docker container, so no
 bash ci-docker.sh
 ```
 
-Builds the `aws-deployment-ci` tools image once (terraform, shellcheck, python3, kubeconform), then runs `ci.sh` against the current working tree (mounted, so uncommitted changes count).
+Builds the `template-deployment-ci` tools image once (terraform, shellcheck, python3, kubeconform), then runs `ci.sh` against the current working tree (mounted, so uncommitted changes count).
 
 ## Prerequisites
 
 - AWS account + `aws` CLI credentials (or `terraform.tfvars` with `aws_profile`), plus `kubectl`
 - Terraform >= 1.5 (CI uses a pinned docker image, no local install needed)
-- the three images pushed to ghcr.io: `aws-api`, `aws-react`, `aws-db-migrations` (public, no registry secret needed)
+- the three images pushed to ghcr.io: `template-api`, `template-react`, `template-db-migrations` (public, no registry secret needed)
 - the React app reads `API_URL` from an env var at runtime (no per-env builds)
 
 ## Deploy (dev)
@@ -166,7 +165,7 @@ Builds the `aws-deployment-ci` tools image once (terraform, shellcheck, python3,
 
 ## Deploy a new build (manual CD)
 
-The app repos (`AWS.Api`, `AWS.React`) build and push their ghcr images on their own CI (tagged `<sha7>` + `latest`). To deploy a new build you press a button — no tags to edit by hand:
+The app repos (`Template.Api`, `Template.React`) build and push their ghcr images on their own CI (tagged `<sha7>` + `latest`). To deploy a new build you press a button — no tags to edit by hand:
 
 1. Push to the app repo's `main` (its CI pushes the new `sha7` + `latest` images).
 2. GitHub → **Actions** → **Deploy** (`.github/workflows/cd.yml`) → choose `env` → **Run workflow**.
@@ -194,7 +193,7 @@ kubectl delete ns app
 cd terraform/environments/dev && terraform destroy
 ```
 
-`terraform destroy` removes everything this config created (EKS, RDS, VPC, NAT, IAM). Nothing persists: the RDS snapshot is skipped and the dev DB is disposable (the migrations job rebuilds the schema on next deploy). Verify: `aws ec2 describe-instances --filters "tag:Project=aws-deployment"` and `aws eks list-clusters` return nothing for this project.
+`terraform destroy` removes everything this config created (EKS, RDS, VPC, NAT, IAM). Nothing persists: the RDS snapshot is skipped and the dev DB is disposable (the migrations job rebuilds the schema on next deploy). Verify: `aws ec2 describe-instances --filters "tag:Project=template"` and `aws eks list-clusters` return nothing for this project.
 
 Re-deploying later is: `terraform apply` → `bootstrap/setup-eks.sh` → `k8s/deploy.sh`.
 
