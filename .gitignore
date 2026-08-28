@@ -429,7 +429,7 @@ FodyWeavers.xsd
 *.msp
 
 
-# AWS.Deployment
+# Template.Deployment
 # Terraform (per-environment state + local values)
 terraform/**/.terraform/
 terraform/**/terraform.tfstate

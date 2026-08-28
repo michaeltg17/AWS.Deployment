@@ -1,4 +1,4 @@
-# AWS.Deployment
+# Template.Deployment
 
 Deploy a small full-stack app — **API + Next.js + PostgreSQL** — onto **AWS**, managed end to end with **Terraform** (infrastructure) and **Kubernetes manifests** (workloads). No domain in dev: the app is served plain-HTTP on the ALB's DNS name.
 
@@ -94,7 +94,23 @@ k8s/
     dev.env.example        copy to dev.env: IMAGE_API_URL, RDS_ENDPOINT, DB_USER, tags
     dev.secrets.env.example  copy to dev.secrets.env: DB_PASSWORD, IMAGE_API_KEY
   deploy.sh               renders + applies everything in order
+.github/workflows/
+  ci.yml              fmt + validate + shellcheck + kubeconform (on push); tag + release on main
+  cd.yml              manual "Deploy" workflow (OIDC -> render env -> k8s/deploy.sh)
+ci.sh                 the CI checks (terraform fmt/validate, shellcheck, kubeconform)
+ci-docker.sh          builds the CI tools image, runs ci.sh on the working tree
+Dockerfile.ci         tools image (terraform, shellcheck, python3, kubeconform)
 ```
+
+## Run CI locally
+
+The same checks that run in GitHub Actions also run in a docker container, so no local tooling is needed:
+
+```sh
+bash ci-docker.sh
+```
+
+Builds the `aws-deployment-ci` tools image once (terraform, shellcheck, python3, kubeconform), then runs `ci.sh` against the current working tree (mounted, so uncommitted changes count).
 
 ## Prerequisites
 
@@ -105,7 +121,7 @@ k8s/
 
 ## Deploy (dev)
 
-1. **Provision AWS** (takes ~15-20 min; see "Costs" below):
+1. **Provision AWS** (takes ~15-20 min):
 
    ```sh
    cd terraform/environments/dev
@@ -150,10 +166,11 @@ k8s/
 
 ## Deploy a new build (manual CD)
 
-The app repos (`AWS.Api`, `AWS.React`) build and push their ghcr images on their own CI. To deploy the latest build to an environment you press a button — no tags to edit by hand:
+The app repos (`AWS.Api`, `AWS.React`) build and push their ghcr images on their own CI (tagged `<sha7>` + `latest`). To deploy a new build you press a button — no tags to edit by hand:
 
-1. GitHub → **Actions** → **Deploy** (`.github/workflows/cd.yml`) → choose `env` → **Run workflow**.
-2. The workflow assumes the env's OIDC role, resolves the `sha7` of the app repos' `main` HEAD (or a specific `sha7` from the optional `api_tag` / `react_tag` fields, to pin or roll back), resolves the RDS endpoint/user via the aws CLI, renders the env files, and runs `k8s/deploy.sh <env>` against the EKS cluster.
+1. Push to the app repo's `main` (its CI pushes the new `sha7` + `latest` images).
+2. GitHub → **Actions** → **Deploy** (`.github/workflows/cd.yml`) → choose `env` → **Run workflow**.
+3. The workflow assumes the env's OIDC role, resolves the `sha7` of the app repos' `main` HEAD (or a specific `sha7` from the optional `api_tag` / `react_tag` fields, to pin or roll back), resolves the RDS endpoint/user via the aws CLI, renders the env files, and runs `k8s/deploy.sh <env>` — which re-runs the migrations job and rolls the deployments.
 
 Required per environment (repo settings → Secrets & variables → Actions):
 
@@ -164,21 +181,9 @@ Required per environment (repo settings → Secrets & variables → Actions):
 | Secret | `IMAGE_API_KEY_DEV`   | image API key for this env                                    |
 | Var    | `IMAGE_API_URL_DEV`   | image API base URL for this env (e.g. the dev image-api host) |
 
-No kubeconfig secret: kubectl uses `aws eks get-token` against the OIDC role.
+Only `dev` is provisioned in this repo so far; `qa`/`prod` (offered by the workflow) follow the same pattern: add a `terraform/environments/<env>` plus the per-env secrets/vars above.
 
-## Run CI locally
-
-The same checks that run in GitHub Actions also run in a docker container, so no local tooling is needed:
-
-```sh
-bash ci-docker.sh
-```
-
-Builds the `aws-deployment-ci` tools image once (terraform, shellcheck, python3, kubeconform), then runs `ci.sh` against the current working tree (mounted, so uncommitted changes count).
-
-## Upgrade the app
-
-Push to an app repo's `main` (its CI pushes the `sha7` + `latest` ghcr images), then Actions → **Deploy** with the env. The run deploys that commit's `sha7` and includes the migrations job + rolling the deployments. To pin or roll back, fill the `api_tag` / `react_tag` fields with a specific `sha7`.
+No kubeconfig secret: kubectl authenticates through the OIDC role (`aws eks update-kubeconfig` mints short-lived tokens per request).
 
 ## Destroy everything (after validation)
 
@@ -192,20 +197,6 @@ cd terraform/environments/dev && terraform destroy
 `terraform destroy` removes everything this config created (EKS, RDS, VPC, NAT, IAM). Nothing persists: the RDS snapshot is skipped and the dev DB is disposable (the migrations job rebuilds the schema on next deploy). Verify: `aws ec2 describe-instances --filters "tag:Project=aws-deployment"` and `aws eks list-clusters` return nothing for this project.
 
 Re-deploying later is: `terraform apply` → `bootstrap/setup-eks.sh` → `k8s/deploy.sh`.
-
-## Costs (us-east-1, approx)
-
-| Resource                        | ~$/mo   | Notes                                        |
-| ------------------------------- | ------- | -------------------------------------------- |
-| EKS control plane               | 73      | fixed, as long as the cluster exists         |
-| 3 x t3.medium workers (2 vCPU)  | ~90     | smallest EKS-supported type; 1 node = ~$30   |
-| RDS db.t4g.micro Multi-AZ       | ~40     | single-AZ halves it                          |
-| ALB                             | ~18-25  | + data transfer ~$0.09/GB                    |
-| NAT gateway (1)                 | ~32     | + data ~$0.045/GB                            |
-| 3 x 20GB gp3 node volumes       | ~5      |                                              |
-| **Total (HA profile)**          | **~260**| 1-node / single-AZ-DB profile: ~$160         |
-
-Cost knobs (`terraform/environments/dev/variables.tf`): `worker_desired_size`/`worker_min_size` (3 = one node per AZ), `worker_instance_types`, `db_instance_class`, `db_multi_az`.
 
 ## Known limitations (by design, for this phase)
 
