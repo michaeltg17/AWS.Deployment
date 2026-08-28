@@ -7,7 +7,8 @@
 #
 # Auth: the workflow assumes the per-env GitHub OIDC role created by
 # terraform (`terraform output -raw cd_role_arn`). No stored kubeconfig:
-# kubectl talks to EKS via `aws eks get-token`.
+# kubectl talks to EKS via `aws eks update-kubeconfig` (its exec creds
+# call `aws eks get-token` per request).
 #
 # Resource names are derived from the env: cluster aws-deployment-<env>,
 # RDS instance aws-deployment-<env>-db (the endpoint/user are resolved at

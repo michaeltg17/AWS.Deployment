@@ -10,9 +10,9 @@
 # and the DB_PASSWORD_DEV GitHub secret.
 db_master_password = "change-me"
 
-# Cost knobs (defaults are the cheap-dev profile):
-# worker_instance_types = ["t3.medium"]   # smallest EKS-supported type
-# worker_desired_size   = 3               # one node per AZ
-# worker_min_size       = 1
+# Cost knobs (defaults are the cheap-dev profile: 1 x m7i-flex.large node):
+# worker_instance_types = ["m7i-flex.large"]  # smallest type this account's Free Tier allows for EKS
+# worker_desired_size   = 3                   # HA profile: one node per AZ
+# worker_min_size       = 3
 # db_instance_class     = "db.t4g.micro"
 # db_multi_az           = true

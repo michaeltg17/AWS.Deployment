@@ -30,9 +30,9 @@ variable "private_subnet_ids" {
 }
 
 variable "worker_instance_types" {
-  description = "Node group instance types. t3.medium is the smallest EKS-supported type and runs this app comfortably"
+  description = "Node group instance types. m7i-flex.large (2 vCPU/8 GB) is the smallest type this account's Free Tier allows that meets EKS's node minimum"
   type        = list(string)
-  default     = ["t3.medium"]
+  default     = ["m7i-flex.large"]
 }
 
 variable "worker_disk_size_gb" {
@@ -62,7 +62,7 @@ variable "worker_desired_size" {
 variable "github_repo" {
   description = "GitHub repo (owner/name) allowed to assume the CD (deploy) role via OIDC"
   type        = string
-  default     = "michaeltg17/AWS.Deployment"
+  default     = "michaeltg17/Template.Deployment"
 }
 
 variable "tags" {

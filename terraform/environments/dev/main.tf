@@ -23,7 +23,7 @@ module "eks" {
   worker_min_size       = var.worker_min_size
   worker_max_size       = var.worker_max_size
   worker_desired_size   = var.worker_desired_size
-  github_repo           = "michaeltg17/AWS.Deployment"
+  github_repo           = "michaeltg17/Template.Deployment"
 
   tags = local.tags
 }
