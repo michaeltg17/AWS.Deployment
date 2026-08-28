@@ -325,7 +325,12 @@ resource "aws_iam_role_policy" "cd" {
 }
 
 # ----- load balancer controller (IRSA) -----
-# The controller creates and manages the ALB from the Ingress in k8s/ingress.yaml.
+# The controller creates and manages the ALB from the Ingress in
+# k8s/ingress.yaml. The ALB (and its k8s-* security groups) are NOT in the
+# Terraform state - never run `terraform destroy` directly; use
+# bootstrap/teardown.sh, which deletes the k8s resources first so the
+# controller can remove the ALB (otherwise the cluster is destroyed with the
+# ALB still alive and its ENIs/EIPs block the subnets/VPC).
 
 # OIDC provider for the cluster issuer (required for IRSA). The EKS OIDC
 # endpoint serves an Amazon-issued certificate; the thumbprints below are the
