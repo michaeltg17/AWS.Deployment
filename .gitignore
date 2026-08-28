@@ -433,6 +433,7 @@ terraform/**/.terraform/
 terraform/**/terraform.tfstate
 terraform/**/terraform.tfstate.*
 terraform/**/terraform.tfvars
+terraform/**/.terraform.tfstate.lock.info
 
 # Deploy values (per-env, non-secret + secrets) - fill from *.env.example
 k8s/environments/*.env
