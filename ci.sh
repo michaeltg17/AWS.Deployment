@@ -17,6 +17,9 @@ echo
 echo "[2/5] Terraform validate"
 (
   cd terraform/environments/dev
+  # Drop any locally-initialized .terraform: it remembers the S3 backend,
+  # and init -backend=false would try to contact it (CI has no AWS creds).
+  rm -rf .terraform
   terraform init -backend=false -input=false
   terraform validate
 )
